@@ -1,0 +1,22 @@
+# ══════════════════════════════════════════════════════════════
+# requirements.txt — 3D Guide V14 Planning Center
+# Válido para app.py (local) e v14_client.py (Streamlit Cloud)
+# ══════════════════════════════════════════════════════════════
+
+# Interface web
+streamlit>=1.35.0
+
+# Banco de dados e dados
+pandas>=2.0.0
+
+# Supabase (portal web + sincronização)
+supabase>=2.4.0
+# Dependências transitivas do supabase (instaladas automaticamente):
+#   httpx, postgrest-py, realtime, storage3, gotrue
+
+# Geração de PDF (apenas app.py local)
+reportlab>=4.0.0
+
+# QR Code PIX (opcional — app.py local)
+qrcode[pil]>=7.4.2
+Pillow>=10.0.0
