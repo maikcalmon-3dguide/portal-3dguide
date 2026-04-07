@@ -299,214 +299,188 @@ def ti(label, key=None, placeholder="", value="", help=None):
 #  • Bridge JS→Python via localStorage + st.query_params
 #    (único mecanismo confiável no sandbox do Streamlit)
 # ══════════════════════════════════════════════════════════════
-def filestack_widget(api_key: str, altura: int = 310) -> None:
+# FILESTACK — widget confiável V11
+#
+# Abordagem definitiva:
+#  • Botão chama client.picker().open() — sem wrappers
+#  • Drag-and-drop via dropPane nativo do Filestack (API oficial)
+#  • Acumulação no localStorage — uploads separados somam-se
+#  • Bridge: query param via history.replaceState (sem DOM inject)
+#  • Sem stopPropagation, sem z-index forçado, sem escudo global
+# ══════════════════════════════════════════════════════════════
+def filestack_widget(api_key: str, altura: int = 340) -> None:
     """
-    Renderiza o picker Filestack + área de drag-and-drop.
-    Após o upload, a URL fica em st.query_params["fs_url"]
-    e é copiada para st.session_state["fs_url"] pelo caller.
+    Widget Filestack auto-contido. Após qualquer upload (clique ou drop),
+    as URLs acumuladas são gravadas em localStorage E enviadas via
+    history.replaceState para que st.query_params as capture no próximo rerun.
     """
-
     widget_html = f"""<!DOCTYPE html>
 <html>
 <head>
-  <script src="https://static.filestackapi.com/filestack-js/3.x.x/filestack.min.js"></script>
-  <style>
-    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{ font-family: system-ui, sans-serif; background: transparent; }}
+<meta charset="utf-8">
+<script src="https://static.filestackapi.com/filestack-js/3.x.x/filestack.min.js"></script>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0;}}
+  body{{font-family:system-ui,sans-serif;background:transparent;}}
 
-    #fs-wrap {{
-      border: 2px dashed #1a6b8a;
-      border-radius: 12px;
-      background: #f0f9ff;
-      padding: 1.1rem 1.4rem 1rem;
-      text-align: center;
-      transition: background .2s, border-color .2s;
-    }}
-    #fs-wrap.drag-over {{
-      background: #dbeafe;
-      border-color: #0e4d66;
-    }}
+  #wrap{{
+    border:2px dashed #1a6b8a;border-radius:12px;background:#f0f9ff;
+    padding:1rem 1.4rem;text-align:center;
+  }}
+  #wrap.over{{background:#dbeafe;border-color:#0e4d66;}}
 
-    #fs-btn {{
-      background: linear-gradient(135deg, #0e4d66, #1a6b8a);
-      color: white; font-size: .92rem; font-weight: 700;
-      padding: .65rem 1.8rem; border-radius: 9px; border: none;
-      cursor: pointer; margin-bottom: .55rem;
-      box-shadow: 0 3px 12px rgba(26,107,138,.30);
-      transition: opacity .15s;
-    }}
-    #fs-btn:hover {{ opacity: .86; }}
+  #alert{{
+    background:#fff7ed;border:1.5px solid #f97316;border-radius:8px;
+    color:#9a3412;font-size:.77rem;font-weight:600;line-height:1.5;
+    padding:.5rem .8rem;margin-bottom:.7rem;text-align:left;
+  }}
 
-    #fs-hint {{
-      font-size: .78rem; color: #4b5563; margin-top: .15rem;
-    }}
-    #fs-status {{
-      font-size: .8rem; color: #1e3a5f;
-      margin-top: .55rem; min-height: 1.1rem;
-    }}
-    #fs-urls {{
-      font-size: .72rem; color: #059669;
-      word-break: break-all; margin-top: .25rem;
-      display: none;
-    }}
-    #fs-alert {{
-      background: #fff7ed;
-      border: 1.5px solid #f97316;
-      border-radius: 8px;
-      color: #9a3412;
-      font-size: .78rem;
-      font-weight: 600;
-      line-height: 1.55;
-      padding: .55rem .85rem;
-      margin-bottom: .75rem;
-      text-align: left;
-    }}
-  </style>
+  #btn{{
+    background:linear-gradient(135deg,#0e4d66,#1a6b8a);
+    color:white;font-size:.92rem;font-weight:700;
+    padding:.65rem 2rem;border-radius:9px;border:none;
+    cursor:pointer;margin-bottom:.45rem;
+    box-shadow:0 3px 12px rgba(26,107,138,.30);
+    display:inline-block;
+  }}
+  #btn:hover{{opacity:.86;}}
+  #hint{{font-size:.76rem;color:#4b5563;margin:.1rem 0;}}
+  #status{{font-size:.8rem;color:#1e3a5f;margin-top:.5rem;min-height:1rem;}}
+  #list{{font-size:.75rem;color:#059669;margin-top:.3rem;text-align:left;
+         display:none;line-height:1.7;}}
+</style>
 </head>
 <body>
-  <div id="fs-wrap"
-       ondragover="onDrag(event)"
-       ondragleave="offDrag(event)"
-       ondrop="onDrop(event)">
-    <div id="fs-alert">
-      ⚠️ ATENÇÃO: Pastas de Tomografia (DICOM) DEVEM ser enviadas compactadas
-      em um único arquivo <strong>.ZIP</strong> ou <strong>.7z</strong>.
-      Arquivos de escaneamento (STL) e fotos podem ser enviados individualmente.
-    </div>
-    <button id="fs-btn" onclick="openPicker()">
-      📎 Selecionar Arquivos
-    </button>
-    <div id="fs-hint">
-      ou arraste aqui &nbsp;·&nbsp;
-      DCM · STL · OBJ · NRRD · ZIP · 7Z · PDF · PNG · JPG &nbsp;(qualquer formato)
-      &nbsp;·&nbsp; <strong>Máximo 50 arquivos | DICOM sempre em .ZIP</strong>
-    </div>
-    <div id="fs-status"></div>
-    <div id="fs-urls"></div>
+<div id="wrap">
+  <div id="alert">
+    ⚠️ DICOM: envie a pasta compactada em <strong>.ZIP</strong> ou <strong>.7z</strong>.
+    STL, fotos e PDFs podem ser enviados individualmente.
   </div>
 
-<script>
-  const client = filestack.init('{api_key}');
+  <button id="btn" type="button">📎 Selecionar Arquivos</button>
 
-  // ── Configuração do picker ──────────────────────────────────
-  const PICKER_OPTS = {{
-    // SEM 'accept' → qualquer arquivo é permitido (resolve .dcm)
+  <div id="hint">
+    ou arraste aqui &nbsp;·&nbsp;
+    ZIP · STL · DCM · PDF · PNG · JPG · qualquer formato
+    &nbsp;·&nbsp; máx 50 arquivos
+  </div>
+  <div id="status"></div>
+  <div id="list"></div>
+</div>
+
+<script>
+// ── Inicializa cliente ────────────────────────────────────────
+var client = filestack.init('{api_key}');
+
+// ── Botão: abre o picker do Filestack (janela de seleção) ────
+document.getElementById('btn').addEventListener('click', function() {{
+  client.picker({{
     fromSources: ['local_file_system', 'googledrive', 'dropbox'],
     maxFiles: 50,
     uploadInBackground: false,
-    onUploadDone: handleDone,
-    onFileUploadFailed: function(file, err) {{
-      setStatus('⚠️ Erro: ' + (err.message || err.toString()));
+    onUploadDone: function(res) {{ handleDone(res.filesUploaded || []); }},
+    onFileUploadFailed: function(f, err) {{
+      setStatus('⚠️ Erro: ' + (err.message || String(err)));
     }}
-  }};
+  }}).open();
+}});
 
-  function openPicker() {{
-    client.picker(PICKER_OPTS).open();
+// ── Drag-and-drop via dropPane do Filestack ──────────────────
+// dropPane é a API oficial para drag-and-drop sem picker
+var dropPane = client.makeDropPane(document.getElementById('wrap'), {{
+  onDragOver: function() {{
+    document.getElementById('wrap').classList.add('over');
+  }},
+  onDragLeave: function() {{
+    document.getElementById('wrap').classList.remove('over');
+  }},
+  onDrop: function() {{
+    document.getElementById('wrap').classList.remove('over');
+    setStatus('⏳ Enviando arquivos arrastados…');
+  }},
+  onSuccess: function(files) {{
+    handleDone(files);
+  }},
+  onError: function(err) {{
+    setStatus('⚠️ Erro no drop: ' + String(err));
+  }},
+  maxFiles: 50
+}});
+
+// ── Callback único para picker e dropPane ────────────────────
+function handleDone(files) {{
+  if (!files || !files.length) {{
+    setStatus('⚠️ Nenhum arquivo recebido.');
+    return;
   }}
 
-  // ── Drag-and-drop ───────────────────────────────────────────
-  function onDrag(e) {{
-    e.preventDefault();
-    document.getElementById('fs-wrap').classList.add('drag-over');
-  }}
-  function offDrag(e) {{
-    document.getElementById('fs-wrap').classList.remove('drag-over');
-  }}
-  function onDrop(e) {{
-    e.preventDefault();
-    document.getElementById('fs-wrap').classList.remove('drag-over');
-    const files = Array.from(e.dataTransfer.files);
-    if (!files.length) return;
-    setStatus('⏳ Enviando ' + files.length + ' arquivo(s)…');
+  var newUrls = files
+    .map(function(f) {{ return f.url || ''; }})
+    .filter(function(u) {{ return u.indexOf('http') === 0; }});
 
-    // Upload via API (sem picker, direto do drop)
-    Promise.all(files.map(f => client.upload(f)))
-      .then(results => {{
-        const urls = results.map(r => r.url).filter(Boolean);
-        handleDone({{ filesUploaded: results.map((r,i) =>
-          ({{ url: r.url, filename: files[i].name }})) }});
-      }})
-      .catch(err => setStatus('⚠️ Erro no drop: ' + err.toString()));
+  if (!newUrls.length) {{
+    setStatus('⚠️ URLs não encontradas na resposta.');
+    return;
   }}
 
-  // ── Callback de conclusão ───────────────────────────────────
-  function handleDone(result) {{
-    const files = result.filesUploaded || [];
-    if (!files.length) {{ setStatus('⚠️ Nenhum arquivo retornado.'); return; }}
+  // Acumula com uploads anteriores
+  var existing = '';
+  try {{ existing = localStorage.getItem('fs_q') || ''; }} catch(e) {{}}
 
-    const newUrls   = files.map(f => f.url).filter(Boolean);
-    const newNames  = files.map(f => f.filename || f.url.split('/').pop());
+  var all = existing
+    ? existing + '|' + newUrls.join('|')
+    : newUrls.join('|');
 
-    // ── Acumula com uploads anteriores (modo não-destrutivo) ──
-    let existing = '';
-    try {{ existing = localStorage.getItem('fs_upload_url') || ''; }} catch(_) {{}}
-    const allUrls  = existing
-      ? existing + '|' + newUrls.join('|')
-      : newUrls.join('|');
-    const allCount = allUrls.split('|').filter(Boolean).length;
+  // Remove duplicatas
+  var uniq = all.split('|')
+    .filter(function(u,i,a) {{ return u && a.indexOf(u) === i; }})
+    .join('|');
 
-    try {{ localStorage.setItem('fs_upload_url', allUrls); }} catch(_) {{}}
-    try {{ localStorage.setItem('fs_upload_names',
-            JSON.stringify(buildNameList(allUrls))); }} catch(_) {{}}
+  try {{ localStorage.setItem('fs_q', uniq); }} catch(e) {{}}
 
-    setStatus('✅ Total na fila: ' + allCount + ' arquivo(s).');
-    renderList(allUrls);
+  var count = uniq.split('|').filter(Boolean).length;
+  setStatus('✅ ' + count + ' arquivo(s) na fila.');
+  renderList(uniq);
 
-    // ── Bridge JS → Python via query param ────────────────────
-    // Modifica a URL do parent adicionando ?fs_url=...
-    // O Python lê st.query_params no próximo render e salva no session_state.
-    try {{
-      const encoded = encodeURIComponent(allUrls);
-      const loc     = window.parent.location;
-      // Preserva query params existentes, só atualiza/adiciona fs_url
-      const params  = new URLSearchParams(loc.search);
-      params.set('fs_url', allUrls);
-      const novaUrl = loc.pathname + '?' + params.toString() + loc.hash;
-      window.parent.history.replaceState(null, '', novaUrl);
-    }} catch(e) {{
-      // Fallback: postMessage (para ambientes que bloqueiam replaceState)
-      window.parent.postMessage(
-        {{ type: 'FILESTACK_UPLOAD', urls: allUrls }}, '*'
-      );
+  // Bridge → Python via query param (sem reload)
+  try {{
+    var p = new URLSearchParams(window.parent.location.search);
+    p.set('fs_url', uniq);
+    window.parent.history.replaceState(
+      null, '',
+      window.parent.location.pathname + '?' + p.toString()
+    );
+  }} catch(e) {{
+    // Fallback silencioso — o dentista verá a lista no widget
+    console.warn('bridge error:', e);
+  }}
+}}
+
+function setStatus(msg) {{
+  document.getElementById('status').textContent = msg;
+}}
+
+function renderList(urlStr) {{
+  var el   = document.getElementById('list');
+  var urls = urlStr.split('|').filter(Boolean);
+  el.style.display = 'block';
+  el.innerHTML = '<strong>Na fila (' + urls.length + '):</strong><br>' +
+    urls.map(function(u, i) {{
+      var h = u.split('/').pop().split('?')[0].substring(0, 12);
+      return '✅ Arquivo ' + (i+1) + ' — ' + h + '…';
+    }}).join('<br>');
+}}
+
+// Restaura fila ao recarregar o iframe
+window.addEventListener('DOMContentLoaded', function() {{
+  try {{
+    var saved = localStorage.getItem('fs_q');
+    if (saved) {{
+      renderList(saved);
+      setStatus('✅ ' + saved.split('|').filter(Boolean).length + ' arquivo(s) na fila.');
     }}
-
-  function buildNameList(urlStr) {{
-    return urlStr.split('|').filter(Boolean).map((u, i) => {{
-      const handle = u.split('/').pop().split('?')[0];
-      return 'Arquivo ' + (i+1) + ' (' + handle.substring(0,8) + '…)';
-    }});
-  }}
-
-  function renderList(urlStr) {{
-    const el    = document.getElementById('fs-urls');
-    const names = buildNameList(urlStr);
-    el.style.display = 'block';
-    el.innerHTML = '<b>Arquivos na fila:</b><br>' +
-      names.map((n,i) => '✅ ' + n).join('<br>');
-  }}
-
-  function setStatus(msg) {{
-    document.getElementById('fs-status').innerText = msg;
-  }}
-
-  // Botão para limpar a fila
-  function clearQueue() {{
-    try {{ localStorage.removeItem('fs_upload_url');
-           localStorage.removeItem('fs_upload_names'); }} catch(_) {{}}
-    document.getElementById('fs-urls').style.display = 'none';
-    document.getElementById('fs-urls').innerHTML = '';
-    setStatus('🗑️ Fila limpa.');
-  }}
-
-  // Restaura lista ao carregar (sobrevive ao rerun do iframe)
-  window.addEventListener('DOMContentLoaded', function() {{
-    try {{
-      const saved = localStorage.getItem('fs_upload_url');
-      if (saved) {{ renderList(saved);
-                    setStatus('✅ ' + saved.split('|').filter(Boolean).length +
-                              ' arquivo(s) na fila.'); }}
-    }} catch(_) {{}}
-  }});
+  }} catch(e) {{}}
+}});
 </script>
 </body>
 </html>"""
@@ -516,8 +490,8 @@ def filestack_widget(api_key: str, altura: int = 310) -> None:
 
 def filestack_url_input() -> str:
     """
-    Exibe lista dos arquivos na fila (sem campo de texto visível).
-    A URL chega via st.query_params, lida no main() antes deste render.
+    Exibe a lista de arquivos na fila e o botão de limpeza.
+    Sem campo de texto visível — a URL vem do query_param lido no main().
     """
     fila_raw  = st.session_state.get("fs_url", "")
     urls_fila = [u.strip() for u in fila_raw.split("|")
@@ -528,22 +502,15 @@ def filestack_url_input() -> str:
         for i, u in enumerate(urls_fila, 1):
             handle = u.rstrip("/").split("/")[-1].split("?")[0]
             st.markdown(f"&nbsp;&nbsp;📎 Arquivo {i} — `{handle[:16]}…`")
-        if st.button("🗑️ Limpar fila de arquivos", key="fs_clear",
-                     help="Remove todos os arquivos da fila sem cancelar o pedido"):
+        if st.button("🗑️ Limpar fila de arquivos", key="fs_clear"):
             st.session_state["fs_url"] = ""
-            # Limpa também o query param
             try:
-                p = dict(st.query_params)
-                p.pop("fs_url", None)
-                st.query_params.clear()
-                for k, v in p.items():
-                    st.query_params[k] = v
+                st.query_params.pop("fs_url")
             except Exception:
                 pass
             st.rerun()
     else:
-        st.info("ℹ️ Nenhum arquivo anexado ainda. "
-                "Use o widget acima para fazer o upload.")
+        st.info("ℹ️ Nenhum arquivo na fila. Use o widget acima.")
 
     return fila_raw
 
