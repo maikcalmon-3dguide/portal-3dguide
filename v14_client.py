@@ -257,10 +257,6 @@ def inject_css(estado: str):
                    max-width:420px; margin:0 auto; }}
 
     input[type="text"]::spelling-error {{ text-decoration:none; }}
-
-    /* ── Garante que o iframe do widget Filestack receba cliques ── */
-    iframe {{ pointer-events: auto !important; }}
-    .stCustomComponentV1 {{ z-index: 9999 !important; position: relative !important; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -270,7 +266,7 @@ def inject_css(estado: str):
 # ══════════════════════════════════════════════════════════════
 _JS_NOAUTOCORRECT = """<script>
 (function(){
-    /* ── Autocomplete off ── */
+    /* ── Autocomplete/autocorrect off ── */
     const A={autocomplete:"off",autocorrect:"off",
               autocapitalize:"none",spellcheck:"false"};
     function p(e){for(const[k,v]of Object.entries(A))
@@ -278,33 +274,6 @@ _JS_NOAUTOCORRECT = """<script>
     function s(){document.querySelectorAll(
         'input[type="text"],input:not([type]),textarea').forEach(p);}
     s(); new MutationObserver(s).observe(document.body,{childList:true,subtree:true});
-
-    /* ── Escudo de arrastar: impede browser de abrir arquivo quando o drop
-       cai fora do widget, mas NÃO bloqueia iframes nem cliques. ── */
-    ['dragover','drop'].forEach(function(evt){
-        window.addEventListener(evt, function(e){
-            /* Libera se o alvo é um iframe (o widget Filestack vive num iframe) */
-            if (e.target && e.target.tagName === 'IFRAME') return;
-            /* Libera se o alvo (ou ancestral) tem a classe do container do widget */
-            if (e.target && e.target.closest && e.target.closest('#fs-wrap')) return;
-            /* Para todos os outros alvos: cancela o comportamento padrão do browser */
-            e.preventDefault();
-            /* SEM stopPropagation — eventos de clique/mousedown não são afetados */
-        }, false);  /* bubble phase: iframes processam antes, escudo age só no resto */
-    });
-
-    /* ── Fallback global: permite chamar o picker de qualquer lugar ──
-       O botão do widget chama openPicker() internamente.
-       Este alias no window permite chamadas externas de emergência. ── */
-    window.openFilestackPicker = function() {
-        try {
-            const iframe = document.querySelector('iframe[title*="streamlit"]') ||
-                           document.querySelector('iframe');
-            if (iframe && iframe.contentWindow && iframe.contentWindow.openPicker) {
-                iframe.contentWindow.openPicker();
-            }
-        } catch(e) { console.warn('openFilestackPicker:', e); }
-    };
 })();
 </script>"""
 
@@ -931,9 +900,7 @@ def render_formulario():
                     unsafe_allow_html=True)
         st.markdown("""<div class="info-box">
             Anexe tomografias, escaneamentos 3D, fotos intraorais e demais
-            arquivos. O widget abre uma janela profissional de upload.<br>
-            <strong>💡 Dica:</strong> Se o arrastar falhar, clique no botão azul
-            para selecionar manualmente.
+            arquivos. O widget abre uma janela profissional de upload.
             </div>""", unsafe_allow_html=True)
 
         try:
@@ -942,7 +909,13 @@ def render_formulario():
             fs_api_key = ""
 
         if fs_api_key:
-            filestack_widget(fs_api_key)
+            # Sanduíche: aviso → widget isolado → lista de arquivos
+            st.warning(
+                "⚠️ Se o navegador tentar salvar o arquivo ao arrastar, "
+                "use o botão azul **\"📎 Selecionar Arquivos\"** abaixo."
+            )
+            with st.container():
+                filestack_widget(fs_api_key)
             filestack_url_input()
         else:
             st.warning("⚠️ Filestack não configurado. Adicione `[filestack] api_key` nos Secrets.")
