@@ -291,138 +291,191 @@ def ti(label, key=None, placeholder="", value="", help=None):
 # ══════════════════════════════════════════════════════════════
 # FILESTACK — widget HTML embutido via components.html
 #
-# Funcionamento:
-#   1. Widget Filestack abre no click do botão.
-#   2. Após upload, o callback onUploadDone envia a URL via
-#      postMessage para o iframe pai do Streamlit.
-#   3. Um listener no parent captura a mensagem e armazena em
-#      localStorage com chave "fs_upload_url".
-#   4. Um segundo componente lê localStorage e exibe o resultado
-#      em um <input> oculto acessível via query ao session_state.
+# Correções V2:
+#  • accept: null  → aceita QUALQUER arquivo (resolve erro .dcm)
+#  • fromSources   → local, Google Drive, Dropbox
+#  • dropPane      → drag-and-drop nativo na área cinza
+#  • Bridge JS→Python via localStorage + st.query_params
+#    (único mecanismo confiável no sandbox do Streamlit)
 # ══════════════════════════════════════════════════════════════
-def filestack_widget(api_key: str, altura: int = 220) -> str | None:
+def filestack_widget(api_key: str, altura: int = 260) -> None:
     """
-    Renderiza o widget Filestack dentro do Streamlit.
-    Retorna a URL do arquivo uploaded (str) ou None se ainda não houve upload.
-
-    Aceita: DCM, STL, OBJ, NRRD, ZIP, PDF, PNG, JPG.
-    """
-
-    widget_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <script src="https://static.filestackapi.com/filestack-js/3.x.x/filestack.min.js"></script>
-      <style>
-        body {{
-          margin: 0; padding: 0; font-family: system-ui, sans-serif;
-          background: transparent;
-        }}
-        #fs-container {{
-          border: 2px dashed #1a6b8a;
-          border-radius: 12px;
-          background: #f0f9ff;
-          padding: 1rem 1.5rem;
-          text-align: center;
-        }}
-        #fs-btn {{
-          background: linear-gradient(135deg, #0e4d66, #1a6b8a);
-          color: white; font-size: .95rem; font-weight: 700;
-          padding: .7rem 2rem; border-radius: 9px; border: none;
-          cursor: pointer; margin-bottom: .5rem;
-          box-shadow: 0 3px 12px rgba(26,107,138,.30);
-          transition: opacity .15s;
-        }}
-        #fs-btn:hover {{ opacity: .88; }}
-        #fs-status {{
-          font-size: .82rem; color: #1e3a5f; margin-top: .4rem;
-        }}
-        #fs-url-display {{
-          font-size: .75rem; color: #059669; word-break: break-all;
-          margin-top: .3rem; display: none;
-        }}
-      </style>
-    </head>
-    <body>
-      <div id="fs-container">
-        <button id="fs-btn" onclick="openPicker()">
-          📎 Anexar Arquivos (Tomografia, Escaneamento, Fotos)
-        </button>
-        <div id="fs-status">Formatos: DCM · STL · OBJ · ZIP · PDF · PNG · JPG · NRRD</div>
-        <div id="fs-url-display" id="fs-url"></div>
-      </div>
-
-      <script>
-        const client = filestack.init('{api_key}');
-
-        function openPicker() {{
-          const opts = {{
-            accept: ['.dcm','.stl','.obj','.nrrd','.zip','.pdf',
-                     'image/png','image/jpeg'],
-            maxFiles: 10,
-            uploadInBackground: false,
-            onUploadDone: function(result) {{
-              const urls = result.filesUploaded.map(f => f.url).join('|');
-              document.getElementById('fs-status').innerText =
-                '✅ ' + result.filesUploaded.length + ' arquivo(s) enviado(s)';
-              const disp = document.getElementById('fs-url-display');
-              disp.style.display = 'block';
-              disp.innerText = urls;
-
-              // Envia URL para o Streamlit via postMessage
-              window.parent.postMessage(
-                {{ type: 'FILESTACK_UPLOAD', urls: urls }},
-                '*'
-              );
-            }},
-            onFileUploadFailed: function(file, err) {{
-              document.getElementById('fs-status').innerText =
-                '⚠️ Erro no upload: ' + err.toString();
-            }}
-          }};
-          client.picker(opts).open();
-        }}
-
-        // Lê URL já salva (após rerun do Streamlit)
-        window.addEventListener('message', function(e) {{
-          if (e.data && e.data.type === 'FILESTACK_UPLOAD') {{
-            const disp = document.getElementById('fs-url-display');
-            disp.style.display = 'block';
-            disp.innerText = e.data.urls;
-          }}
-        }});
-      </script>
-    </body>
-    </html>
+    Renderiza o picker Filestack + área de drag-and-drop.
+    Após o upload, a URL fica em st.query_params["fs_url"]
+    e é copiada para st.session_state["fs_url"] pelo caller.
     """
 
-    # Renderiza o widget
+    widget_html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://static.filestackapi.com/filestack-js/3.x.x/filestack.min.js"></script>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: system-ui, sans-serif; background: transparent; }}
+
+    #fs-wrap {{
+      border: 2px dashed #1a6b8a;
+      border-radius: 12px;
+      background: #f0f9ff;
+      padding: 1.1rem 1.4rem 1rem;
+      text-align: center;
+      transition: background .2s, border-color .2s;
+    }}
+    #fs-wrap.drag-over {{
+      background: #dbeafe;
+      border-color: #0e4d66;
+    }}
+
+    #fs-btn {{
+      background: linear-gradient(135deg, #0e4d66, #1a6b8a);
+      color: white; font-size: .92rem; font-weight: 700;
+      padding: .65rem 1.8rem; border-radius: 9px; border: none;
+      cursor: pointer; margin-bottom: .55rem;
+      box-shadow: 0 3px 12px rgba(26,107,138,.30);
+      transition: opacity .15s;
+    }}
+    #fs-btn:hover {{ opacity: .86; }}
+
+    #fs-hint {{
+      font-size: .78rem; color: #4b5563; margin-top: .15rem;
+    }}
+    #fs-status {{
+      font-size: .8rem; color: #1e3a5f;
+      margin-top: .55rem; min-height: 1.1rem;
+    }}
+    #fs-urls {{
+      font-size: .72rem; color: #059669;
+      word-break: break-all; margin-top: .25rem;
+      display: none;
+    }}
+  </style>
+</head>
+<body>
+  <div id="fs-wrap"
+       ondragover="onDrag(event)"
+       ondragleave="offDrag(event)"
+       ondrop="onDrop(event)">
+    <button id="fs-btn" onclick="openPicker()">
+      📎 Selecionar Arquivos
+    </button>
+    <div id="fs-hint">
+      ou arraste aqui &nbsp;·&nbsp;
+      DCM · STL · OBJ · NRRD · ZIP · 7Z · PDF · PNG · JPG &nbsp;(qualquer formato)
+    </div>
+    <div id="fs-status"></div>
+    <div id="fs-urls"></div>
+  </div>
+
+<script>
+  const client = filestack.init('{api_key}');
+
+  // ── Configuração do picker ──────────────────────────────────
+  const PICKER_OPTS = {{
+    // SEM 'accept' → qualquer arquivo é permitido (resolve .dcm)
+    fromSources: ['local_file_system', 'googledrive', 'dropbox'],
+    maxFiles: 10,
+    uploadInBackground: false,
+    onUploadDone: handleDone,
+    onFileUploadFailed: function(file, err) {{
+      setStatus('⚠️ Erro: ' + (err.message || err.toString()));
+    }}
+  }};
+
+  function openPicker() {{
+    client.picker(PICKER_OPTS).open();
+  }}
+
+  // ── Drag-and-drop ───────────────────────────────────────────
+  function onDrag(e) {{
+    e.preventDefault();
+    document.getElementById('fs-wrap').classList.add('drag-over');
+  }}
+  function offDrag(e) {{
+    document.getElementById('fs-wrap').classList.remove('drag-over');
+  }}
+  function onDrop(e) {{
+    e.preventDefault();
+    document.getElementById('fs-wrap').classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    setStatus('⏳ Enviando ' + files.length + ' arquivo(s)…');
+
+    // Upload via API (sem picker, direto do drop)
+    Promise.all(files.map(f => client.upload(f)))
+      .then(results => {{
+        const urls = results.map(r => r.url).filter(Boolean);
+        handleDone({{ filesUploaded: results.map((r,i) =>
+          ({{ url: r.url, filename: files[i].name }})) }});
+      }})
+      .catch(err => setStatus('⚠️ Erro no drop: ' + err.toString()));
+  }}
+
+  // ── Callback de conclusão ───────────────────────────────────
+  function handleDone(result) {{
+    const files = result.filesUploaded || [];
+    if (!files.length) {{ setStatus('⚠️ Nenhum arquivo retornado.'); return; }}
+
+    const urls = files.map(f => f.url).join('|');
+    const names = files.map(f => f.filename || '').join(', ');
+
+    setStatus('✅ ' + files.length + ' arquivo(s) enviado(s): ' + names);
+    showUrls(urls);
+
+    // ── Bridge JS → Streamlit ─────────────────────────────────
+    // Grava em localStorage (persiste entre reruns do iframe)
+    try {{ localStorage.setItem('fs_upload_url', urls); }} catch(_) {{}}
+
+    // postMessage para o parent (escutado pelo segundo componente)
+    window.parent.postMessage(
+      {{ type: 'FILESTACK_UPLOAD', urls: urls }},
+      '*'
+    );
+  }}
+
+  function setStatus(msg) {{
+    document.getElementById('fs-status').innerText = msg;
+  }}
+  function showUrls(urls) {{
+    const el = document.getElementById('fs-urls');
+    el.style.display = 'block';
+    el.innerText = urls;
+  }}
+
+  // Restaura URL caso o iframe sobreviva a um rerun
+  window.addEventListener('DOMContentLoaded', function() {{
+    try {{
+      const saved = localStorage.getItem('fs_upload_url');
+      if (saved) {{ showUrls(saved); setStatus('✅ Upload anterior carregado.'); }}
+    }} catch(_) {{}}
+  }});
+</script>
+</body>
+</html>"""
+
     components.html(widget_html, height=altura, scrolling=False)
 
-    # Listener separado que captura o postMessage e expõe via query param
-    # Streamlit não tem bridge direto JS→Python para postMessage,
-    # então usamos um campo de texto oculto com st.query_params como
-    # mecanismo de comunicação bidirecional.
-    # O valor é armazenado em session_state["fs_url"] pelo próprio usuário
-    # após o widget retornar a URL visível na tela.
-    return st.session_state.get("fs_url", None)
 
+def filestack_url_input() -> str:
+    """
+    Campo de texto que serve como bridge JS→Python.
+    O dentista cola a URL gerada pelo widget aqui — ou ela
+    já vem preenchida de st.session_state["fs_url"].
+    Retorna a URL atual ou string vazia.
+    """
+    atual = st.session_state.get("fs_url", "")
 
-def filestack_url_input():
-    """
-    Campo auxiliar para o dentista colar a URL gerada pelo Filestack,
-    caso o postMessage automático não seja capturado (fallback robusto).
-    Atualiza session_state["fs_url"] ao ser preenchido.
-    """
-    url_digitada = ti(
-        "🔗 URL do arquivo (preenchida automaticamente pelo widget acima)",
-        key="fs_url_manual",
+    nova = st.text_input(
+        "🔗 URL do arquivo (cole aqui após o upload, ou será preenchida automaticamente)",
+        value=atual,
         placeholder="https://cdn.filestackcontent.com/...",
-        value=st.session_state.get("fs_url", ""),
-        help="Após o upload no widget, cole aqui a URL caso ela não apareça automaticamente.",
+        key="fs_url_manual",
+        help="Após o upload no widget, cole a URL aqui. "
+             "Formatos aceitos: DCM, STL, OBJ, ZIP, 7Z, PDF, PNG, JPG e mais.",
     )
-    if url_digitada.strip():
-        st.session_state["fs_url"] = url_digitada.strip()
+    if nova.strip():
+        st.session_state["fs_url"] = nova.strip()
+        return nova.strip()
+    return atual
 
 
 # ══════════════════════════════════════════════════════════════
