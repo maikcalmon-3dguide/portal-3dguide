@@ -475,25 +475,29 @@ def filestack_widget(api_key: str, altura: int = 310) -> None:
 
 def filestack_url_input() -> str:
     """
-    Campo de texto que serve como bridge JS→Python.
-    O dentista cola a URL gerada pelo widget aqui — ou ela
-    já vem preenchida de st.session_state["fs_url"].
-    Retorna a URL atual ou string vazia.
+    Campo de texto bridge JS→Python para capturar a URL do Filestack.
+    Sincroniza automaticamente para session_state["fs_url"] a cada render.
     """
-    atual = st.session_state.get("fs_url", "")
+    # Inicializa a key do campo no session_state se ainda não existir
+    if "fs_url_manual" not in st.session_state:
+        st.session_state["fs_url_manual"] = st.session_state.get("fs_url", "")
 
-    nova = st.text_input(
-        "🔗 URL do arquivo (cole aqui após o upload, ou será preenchida automaticamente)",
-        value=atual,
+    st.text_input(
+        "🔗 URL do arquivo — cole aqui após o upload",
         placeholder="https://cdn.filestackcontent.com/...",
-        key="fs_url_manual",
-        help="Após o upload no widget, cole a URL aqui. "
-             "Formatos aceitos: DCM, STL, OBJ, ZIP, 7Z, PDF, PNG, JPG e mais.",
+        key="fs_url_manual",       # Streamlit atualiza esta key automaticamente
+        help="Após o upload no widget acima, a URL aparece aqui. "
+             "Se não aparecer, cole manualmente.",
     )
-    if nova.strip():
-        st.session_state["fs_url"] = nova.strip()
-        return nova.strip()
-    return atual
+
+    # Lê o valor atual do campo (atualizado pelo Streamlit a cada interação)
+    url_atual = st.session_state.get("fs_url_manual", "").strip()
+
+    # Persiste em fs_url (fonte de verdade usada no payload)
+    if url_atual:
+        st.session_state["fs_url"] = url_atual
+
+    return st.session_state.get("fs_url", "")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -864,7 +868,10 @@ def render_formulario():
 
         arquivo_url = st.session_state.get("fs_url", "").strip()
         if arquivo_url:
-            st.success(f"✅ Arquivo(s) prontos: {arquivo_url[:80]}{'…' if len(arquivo_url)>80 else ''}")
+            n_links = len([u for u in arquivo_url.split("|") if u.strip()])
+            st.success(f"✅ {n_links} arquivo(s) prontos para envio.")
+        else:
+            st.info("ℹ️ Nenhum arquivo anexado. Você pode enviar sem arquivos.")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -917,6 +924,18 @@ def render_formulario():
                           type="primary", use_container_width=True):
             with st.spinner("Salvando pedido…"):
                 try:
+                    # Lê o arquivo_url no momento do clique — garante o valor mais recente
+                    # Coalescência: fs_url_manual (campo visível) > fs_url (salvo)
+                    _url_manual = st.session_state.get("fs_url_manual", "").strip()
+                    _url_salvo  = st.session_state.get("fs_url", "").strip()
+                    arquivo_url = _url_manual or _url_salvo
+
+                    # Múltiplos links separados por | (comportamento do Filestack)
+                    urls_validas = "|".join(
+                        u.strip() for u in arquivo_url.split("|")
+                        if u.strip().startswith("http")
+                    )
+
                     payload = {
                         "email":            st.session_state.pp_email.strip(),
                         "profissional":     st.session_state.pp_prof.strip(),
@@ -938,11 +957,15 @@ def render_formulario():
                         "num_implantes":    st.session_state.pp_n_implantes,
                         "tecnica":          st.session_state.pp_tecnica,
                         "data_cirurgia":    st.session_state.pp_data_cirurgia.strftime("%Y-%m-%d"),
-                        # URL do Filestack salva em arquivo_url (coluna dedicada)
-                        "arquivo_url":      arquivo_url,
-                        # Compatibilidade com arquivos_paths do sync local
-                        "arquivos_paths":   arquivo_url,
+                        # ── Status ────────────────────────────────────────
+                        # "Caixa de Entrada" é a 1ª coluna do Painel Operacional
+                        # no app.py (_KANBAN_COLS[0]). NÃO altere este valor.
                         "status":           "Caixa de Entrada",
+                        # ── URLs do Filestack ──────────────────────────────
+                        # urls_validas: links filtrados e unidos por |
+                        # Gravadas em DUAS colunas para compatibilidade total
+                        "arquivo_url":      urls_validas,
+                        "arquivos_paths":   urls_validas,
                         "faturado":         False,
                         "empresa_destino":  "",
                     }
