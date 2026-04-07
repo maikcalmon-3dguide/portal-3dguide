@@ -433,37 +433,80 @@ def filestack_widget(api_key: str, altura: int = 310) -> None:
     const files = result.filesUploaded || [];
     if (!files.length) {{ setStatus('⚠️ Nenhum arquivo retornado.'); return; }}
 
-    const urls = files.map(f => f.url).join('|');
-    const names = files.map(f => f.filename || '').join(', ');
+    const newUrls   = files.map(f => f.url).filter(Boolean);
+    const newNames  = files.map(f => f.filename || f.url.split('/').pop());
 
-    setStatus('✅ ' + files.length + ' arquivo(s) enviado(s): ' + names);
-    showUrls(urls);
+    // ── Acumula com uploads anteriores (modo não-destrutivo) ──
+    let existing = '';
+    try {{ existing = localStorage.getItem('fs_upload_url') || ''; }} catch(_) {{}}
+    const allUrls  = existing
+      ? existing + '|' + newUrls.join('|')
+      : newUrls.join('|');
+    const allCount = allUrls.split('|').filter(Boolean).length;
 
-    // ── Bridge JS → Streamlit ─────────────────────────────────
-    // Grava em localStorage (persiste entre reruns do iframe)
-    try {{ localStorage.setItem('fs_upload_url', urls); }} catch(_) {{}}
+    try {{ localStorage.setItem('fs_upload_url', allUrls); }} catch(_) {{}}
+    try {{ localStorage.setItem('fs_upload_names',
+            JSON.stringify(buildNameList(allUrls))); }} catch(_) {{}}
 
-    // postMessage para o parent (escutado pelo segundo componente)
+    setStatus('✅ Total na fila: ' + allCount + ' arquivo(s).');
+    renderList(allUrls);
+
+    // ── Auto-fill: injeta URL no campo de texto do parent (Streamlit) ──
+    // Percorre os iframes pai procurando o input com placeholder do Filestack
+    try {{
+      const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+      for (const inp of inputs) {{
+        if (inp.placeholder && inp.placeholder.includes('filestackcontent')) {{
+          inp.value = allUrls;
+          inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+          inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+          break;
+        }}
+      }}
+    }} catch(_) {{}}
+
+    // postMessage para qualquer listener no parent
     window.parent.postMessage(
-      {{ type: 'FILESTACK_UPLOAD', urls: urls }},
+      {{ type: 'FILESTACK_UPLOAD', urls: allUrls }},
       '*'
     );
+  }}
+
+  function buildNameList(urlStr) {{
+    return urlStr.split('|').filter(Boolean).map((u, i) => {{
+      const handle = u.split('/').pop().split('?')[0];
+      return 'Arquivo ' + (i+1) + ' (' + handle.substring(0,8) + '…)';
+    }});
+  }}
+
+  function renderList(urlStr) {{
+    const el    = document.getElementById('fs-urls');
+    const names = buildNameList(urlStr);
+    el.style.display = 'block';
+    el.innerHTML = '<b>Arquivos na fila:</b><br>' +
+      names.map((n,i) => '✅ ' + n).join('<br>');
   }}
 
   function setStatus(msg) {{
     document.getElementById('fs-status').innerText = msg;
   }}
-  function showUrls(urls) {{
-    const el = document.getElementById('fs-urls');
-    el.style.display = 'block';
-    el.innerText = urls;
+
+  // Botão para limpar a fila
+  function clearQueue() {{
+    try {{ localStorage.removeItem('fs_upload_url');
+           localStorage.removeItem('fs_upload_names'); }} catch(_) {{}}
+    document.getElementById('fs-urls').style.display = 'none';
+    document.getElementById('fs-urls').innerHTML = '';
+    setStatus('🗑️ Fila limpa.');
   }}
 
-  // Restaura URL caso o iframe sobreviva a um rerun
+  // Restaura lista ao carregar (sobrevive ao rerun do iframe)
   window.addEventListener('DOMContentLoaded', function() {{
     try {{
       const saved = localStorage.getItem('fs_upload_url');
-      if (saved) {{ showUrls(saved); setStatus('✅ Upload anterior carregado.'); }}
+      if (saved) {{ renderList(saved);
+                    setStatus('✅ ' + saved.split('|').filter(Boolean).length +
+                              ' arquivo(s) na fila.'); }}
     }} catch(_) {{}}
   }});
 </script>
@@ -475,27 +518,57 @@ def filestack_widget(api_key: str, altura: int = 310) -> None:
 
 def filestack_url_input() -> str:
     """
-    Campo de texto bridge JS→Python para capturar a URL do Filestack.
-    Sincroniza automaticamente para session_state["fs_url"] a cada render.
+    Bridge JS→Python para capturar URLs do Filestack.
+    - Campo de texto oculto sincroniza automaticamente via key=
+    - Exibe lista dinâmica dos arquivos na fila
+    - Modo acumulativo: novos uploads somam-se aos anteriores
     """
-    # Inicializa a key do campo no session_state se ainda não existir
+    # Campo oculto que o JS preenche via DOM injection
+    # Usar key= garante que o Streamlit leia o valor atualizado a cada render
     if "fs_url_manual" not in st.session_state:
         st.session_state["fs_url_manual"] = st.session_state.get("fs_url", "")
 
+    # Campo visível (pequeno, para cola manual se necessário)
     st.text_input(
-        "🔗 URL do arquivo — cole aqui após o upload",
+        "🔗 URLs dos arquivos (preenchido automaticamente pelo widget)",
         placeholder="https://cdn.filestackcontent.com/...",
-        key="fs_url_manual",       # Streamlit atualiza esta key automaticamente
-        help="Após o upload no widget acima, a URL aparece aqui. "
-             "Se não aparecer, cole manualmente.",
+        key="fs_url_manual",
+        help="O campo é preenchido automaticamente após o upload. "
+             "Para múltiplos uploads use o separador | entre as URLs.",
+        label_visibility="collapsed",
     )
 
-    # Lê o valor atual do campo (atualizado pelo Streamlit a cada interação)
-    url_atual = st.session_state.get("fs_url_manual", "").strip()
+    # Lê o valor atual — pode ter chegado via widget ou colagem manual
+    url_campo = st.session_state.get("fs_url_manual", "").strip()
 
-    # Persiste em fs_url (fonte de verdade usada no payload)
-    if url_atual:
-        st.session_state["fs_url"] = url_atual
+    # Acumula com o que já estava salvo (não sobrescreve)
+    url_salvo = st.session_state.get("fs_url", "").strip()
+    if url_campo and url_campo != url_salvo:
+        # Merge: une sem duplicar
+        existentes = set(u for u in url_salvo.split("|") if u.strip())
+        novos      = set(u for u in url_campo.split("|") if u.strip())
+        merged     = "|".join(existentes | novos)
+        st.session_state["fs_url"] = merged
+    elif url_campo:
+        st.session_state["fs_url"] = url_campo
+
+    # Lista dinâmica dos arquivos na fila
+    fila_raw = st.session_state.get("fs_url", "")
+    urls_fila = [u.strip() for u in fila_raw.split("|")
+                 if u.strip().startswith("http")]
+
+    if urls_fila:
+        st.markdown(f"**📋 {len(urls_fila)} arquivo(s) na fila:**")
+        for i, u in enumerate(urls_fila, 1):
+            handle = u.rstrip("/").split("/")[-1].split("?")[0]
+            st.markdown(f"&nbsp;&nbsp;✅ Arquivo {i} — `{handle[:12]}…`")
+
+        # Botão para limpar a fila (sem apagar o pedido)
+        if st.button("🗑️ Limpar fila de arquivos", key="fs_clear",
+                     help="Remove todos os arquivos da fila sem cancelar o pedido"):
+            st.session_state["fs_url"]        = ""
+            st.session_state["fs_url_manual"] = ""
+            st.rerun()
 
     return st.session_state.get("fs_url", "")
 
@@ -970,6 +1043,9 @@ def render_formulario():
                         "empresa_destino":  "",
                     }
                     inserir_pedido(payload)
+                    # Limpa a fila de arquivos para o próximo pedido
+                    st.session_state["fs_url"]        = ""
+                    st.session_state["fs_url_manual"] = ""
                     st.session_state.estado = "sucesso"
                     st.rerun()
 
