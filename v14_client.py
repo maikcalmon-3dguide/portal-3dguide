@@ -298,7 +298,7 @@ def ti(label, key=None, placeholder="", value="", help=None):
 #  • Bridge JS→Python via localStorage + st.query_params
 #    (único mecanismo confiável no sandbox do Streamlit)
 # ══════════════════════════════════════════════════════════════
-def filestack_widget(api_key: str, altura: int = 260) -> None:
+def filestack_widget(api_key: str, altura: int = 310) -> None:
     """
     Renderiza o picker Filestack + área de drag-and-drop.
     Após o upload, a URL fica em st.query_params["fs_url"]
@@ -348,6 +348,18 @@ def filestack_widget(api_key: str, altura: int = 260) -> None:
       word-break: break-all; margin-top: .25rem;
       display: none;
     }}
+    #fs-alert {{
+      background: #fff7ed;
+      border: 1.5px solid #f97316;
+      border-radius: 8px;
+      color: #9a3412;
+      font-size: .78rem;
+      font-weight: 600;
+      line-height: 1.55;
+      padding: .55rem .85rem;
+      margin-bottom: .75rem;
+      text-align: left;
+    }}
   </style>
 </head>
 <body>
@@ -355,12 +367,18 @@ def filestack_widget(api_key: str, altura: int = 260) -> None:
        ondragover="onDrag(event)"
        ondragleave="offDrag(event)"
        ondrop="onDrop(event)">
+    <div id="fs-alert">
+      ⚠️ ATENÇÃO: Pastas de Tomografia (DICOM) DEVEM ser enviadas compactadas
+      em um único arquivo <strong>.ZIP</strong> ou <strong>.7z</strong>.
+      Arquivos de escaneamento (STL) e fotos podem ser enviados individualmente.
+    </div>
     <button id="fs-btn" onclick="openPicker()">
       📎 Selecionar Arquivos
     </button>
     <div id="fs-hint">
       ou arraste aqui &nbsp;·&nbsp;
       DCM · STL · OBJ · NRRD · ZIP · 7Z · PDF · PNG · JPG &nbsp;(qualquer formato)
+      &nbsp;·&nbsp; <strong>Máximo 50 arquivos | DICOM sempre em .ZIP</strong>
     </div>
     <div id="fs-status"></div>
     <div id="fs-urls"></div>
@@ -373,7 +391,7 @@ def filestack_widget(api_key: str, altura: int = 260) -> None:
   const PICKER_OPTS = {{
     // SEM 'accept' → qualquer arquivo é permitido (resolve .dcm)
     fromSources: ['local_file_system', 'googledrive', 'dropbox'],
-    maxFiles: 10,
+    maxFiles: 50,
     uploadInBackground: false,
     onUploadDone: handleDone,
     onFileUploadFailed: function(file, err) {{
