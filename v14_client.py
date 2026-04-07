@@ -451,26 +451,23 @@ def filestack_widget(api_key: str, altura: int = 310) -> None:
     setStatus('✅ Total na fila: ' + allCount + ' arquivo(s).');
     renderList(allUrls);
 
-    // ── Auto-fill: injeta URL no campo de texto do parent (Streamlit) ──
-    // Percorre os iframes pai procurando o input com placeholder do Filestack
+    // ── Bridge JS → Python via query param ────────────────────
+    // Modifica a URL do parent adicionando ?fs_url=...
+    // O Python lê st.query_params no próximo render e salva no session_state.
     try {{
-      const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-      for (const inp of inputs) {{
-        if (inp.placeholder && inp.placeholder.includes('filestackcontent')) {{
-          inp.value = allUrls;
-          inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-          inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-          break;
-        }}
-      }}
-    }} catch(_) {{}}
-
-    // postMessage para qualquer listener no parent
-    window.parent.postMessage(
-      {{ type: 'FILESTACK_UPLOAD', urls: allUrls }},
-      '*'
-    );
-  }}
+      const encoded = encodeURIComponent(allUrls);
+      const loc     = window.parent.location;
+      // Preserva query params existentes, só atualiza/adiciona fs_url
+      const params  = new URLSearchParams(loc.search);
+      params.set('fs_url', allUrls);
+      const novaUrl = loc.pathname + '?' + params.toString() + loc.hash;
+      window.parent.history.replaceState(null, '', novaUrl);
+    }} catch(e) {{
+      // Fallback: postMessage (para ambientes que bloqueiam replaceState)
+      window.parent.postMessage(
+        {{ type: 'FILESTACK_UPLOAD', urls: allUrls }}, '*'
+      );
+    }}
 
   function buildNameList(urlStr) {{
     return urlStr.split('|').filter(Boolean).map((u, i) => {{
@@ -518,59 +515,36 @@ def filestack_widget(api_key: str, altura: int = 310) -> None:
 
 def filestack_url_input() -> str:
     """
-    Bridge JS→Python para capturar URLs do Filestack.
-    - Campo de texto oculto sincroniza automaticamente via key=
-    - Exibe lista dinâmica dos arquivos na fila
-    - Modo acumulativo: novos uploads somam-se aos anteriores
+    Exibe lista dos arquivos na fila (sem campo de texto visível).
+    A URL chega via st.query_params, lida no main() antes deste render.
     """
-    # Campo oculto que o JS preenche via DOM injection
-    # Usar key= garante que o Streamlit leia o valor atualizado a cada render
-    if "fs_url_manual" not in st.session_state:
-        st.session_state["fs_url_manual"] = st.session_state.get("fs_url", "")
-
-    # Campo visível (pequeno, para cola manual se necessário)
-    st.text_input(
-        "🔗 URLs dos arquivos (preenchido automaticamente pelo widget)",
-        placeholder="https://cdn.filestackcontent.com/...",
-        key="fs_url_manual",
-        help="O campo é preenchido automaticamente após o upload. "
-             "Para múltiplos uploads use o separador | entre as URLs.",
-        label_visibility="collapsed",
-    )
-
-    # Lê o valor atual — pode ter chegado via widget ou colagem manual
-    url_campo = st.session_state.get("fs_url_manual", "").strip()
-
-    # Acumula com o que já estava salvo (não sobrescreve)
-    url_salvo = st.session_state.get("fs_url", "").strip()
-    if url_campo and url_campo != url_salvo:
-        # Merge: une sem duplicar
-        existentes = set(u for u in url_salvo.split("|") if u.strip())
-        novos      = set(u for u in url_campo.split("|") if u.strip())
-        merged     = "|".join(existentes | novos)
-        st.session_state["fs_url"] = merged
-    elif url_campo:
-        st.session_state["fs_url"] = url_campo
-
-    # Lista dinâmica dos arquivos na fila
-    fila_raw = st.session_state.get("fs_url", "")
+    fila_raw  = st.session_state.get("fs_url", "")
     urls_fila = [u.strip() for u in fila_raw.split("|")
                  if u.strip().startswith("http")]
 
     if urls_fila:
-        st.markdown(f"**📋 {len(urls_fila)} arquivo(s) na fila:**")
+        st.success(f"✅ {len(urls_fila)} arquivo(s) prontos para envio:")
         for i, u in enumerate(urls_fila, 1):
             handle = u.rstrip("/").split("/")[-1].split("?")[0]
-            st.markdown(f"&nbsp;&nbsp;✅ Arquivo {i} — `{handle[:12]}…`")
-
-        # Botão para limpar a fila (sem apagar o pedido)
+            st.markdown(f"&nbsp;&nbsp;📎 Arquivo {i} — `{handle[:16]}…`")
         if st.button("🗑️ Limpar fila de arquivos", key="fs_clear",
                      help="Remove todos os arquivos da fila sem cancelar o pedido"):
-            st.session_state["fs_url"]        = ""
-            st.session_state["fs_url_manual"] = ""
+            st.session_state["fs_url"] = ""
+            # Limpa também o query param
+            try:
+                p = dict(st.query_params)
+                p.pop("fs_url", None)
+                st.query_params.clear()
+                for k, v in p.items():
+                    st.query_params[k] = v
+            except Exception:
+                pass
             st.rerun()
+    else:
+        st.info("ℹ️ Nenhum arquivo anexado ainda. "
+                "Use o widget acima para fazer o upload.")
 
-    return st.session_state.get("fs_url", "")
+    return fila_raw
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1080,6 +1054,25 @@ def render_sucesso():
 # ══════════════════════════════════════════════════════════════
 def main():
     _init()
+
+    # ── Bridge query_param → session_state ───────────────────
+    # O JS do widget grava fs_url na URL via history.replaceState.
+    # O Streamlit relê os query_params a cada request — capturamos aqui,
+    # acumulamos com a fila existente e limpamos o param para evitar loop.
+    qp_url = st.query_params.get("fs_url", "")
+    if qp_url:
+        existentes = set(u for u in
+                         st.session_state.get("fs_url", "").split("|") if u.strip())
+        novos      = set(u for u in qp_url.split("|")
+                         if u.strip().startswith("http"))
+        merged     = "|".join(sorted(existentes | novos))
+        st.session_state["fs_url"] = merged
+        # Remove o param da URL (evita loop em reruns)
+        try:
+            st.query_params.pop("fs_url")
+        except Exception:
+            pass
+
     estado = st.session_state.estado
 
     inject_css(estado)
