@@ -266,6 +266,7 @@ def inject_css(estado: str):
 # ══════════════════════════════════════════════════════════════
 _JS_NOAUTOCORRECT = """<script>
 (function(){
+    /* ── Autocomplete off ── */
     const A={autocomplete:"off",autocorrect:"off",
               autocapitalize:"none",spellcheck:"false"};
     function p(e){for(const[k,v]of Object.entries(A))
@@ -273,6 +274,14 @@ _JS_NOAUTOCORRECT = """<script>
     function s(){document.querySelectorAll(
         'input[type="text"],input:not([type]),textarea').forEach(p);}
     s(); new MutationObserver(s).observe(document.body,{childList:true,subtree:true});
+
+    /* ── Escudo global: impede o navegador de abrir arquivos soltos fora do widget ── */
+    ['dragover','dragenter','drop'].forEach(function(evt){
+        window.addEventListener(evt, function(e){
+            e.preventDefault();
+            e.stopPropagation();
+        }, true);   /* capture=true: intercepta ANTES de qualquer handler filho */
+    });
 })();
 </script>"""
 
@@ -899,7 +908,9 @@ def render_formulario():
                     unsafe_allow_html=True)
         st.markdown("""<div class="info-box">
             Anexe tomografias, escaneamentos 3D, fotos intraorais e demais
-            arquivos. O widget abre uma janela profissional de upload.
+            arquivos. O widget abre uma janela profissional de upload.<br>
+            <strong>💡 Dica:</strong> Se o arrastar falhar, clique no botão azul
+            para selecionar manualmente.
             </div>""", unsafe_allow_html=True)
 
         try:
