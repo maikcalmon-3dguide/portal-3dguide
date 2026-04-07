@@ -257,6 +257,10 @@ def inject_css(estado: str):
                    max-width:420px; margin:0 auto; }}
 
     input[type="text"]::spelling-error {{ text-decoration:none; }}
+
+    /* ── Garante que o iframe do widget Filestack receba cliques ── */
+    iframe {{ pointer-events: auto !important; }}
+    .stCustomComponentV1 {{ z-index: 9999 !important; position: relative !important; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -275,13 +279,32 @@ _JS_NOAUTOCORRECT = """<script>
         'input[type="text"],input:not([type]),textarea').forEach(p);}
     s(); new MutationObserver(s).observe(document.body,{childList:true,subtree:true});
 
-    /* ── Escudo global: impede o navegador de abrir arquivos soltos fora do widget ── */
-    ['dragover','dragenter','drop'].forEach(function(evt){
+    /* ── Escudo de arrastar: impede browser de abrir arquivo quando o drop
+       cai fora do widget, mas NÃO bloqueia iframes nem cliques. ── */
+    ['dragover','drop'].forEach(function(evt){
         window.addEventListener(evt, function(e){
+            /* Libera se o alvo é um iframe (o widget Filestack vive num iframe) */
+            if (e.target && e.target.tagName === 'IFRAME') return;
+            /* Libera se o alvo (ou ancestral) tem a classe do container do widget */
+            if (e.target && e.target.closest && e.target.closest('#fs-wrap')) return;
+            /* Para todos os outros alvos: cancela o comportamento padrão do browser */
             e.preventDefault();
-            e.stopPropagation();
-        }, true);   /* capture=true: intercepta ANTES de qualquer handler filho */
+            /* SEM stopPropagation — eventos de clique/mousedown não são afetados */
+        }, false);  /* bubble phase: iframes processam antes, escudo age só no resto */
     });
+
+    /* ── Fallback global: permite chamar o picker de qualquer lugar ──
+       O botão do widget chama openPicker() internamente.
+       Este alias no window permite chamadas externas de emergência. ── */
+    window.openFilestackPicker = function() {
+        try {
+            const iframe = document.querySelector('iframe[title*="streamlit"]') ||
+                           document.querySelector('iframe');
+            if (iframe && iframe.contentWindow && iframe.contentWindow.openPicker) {
+                iframe.contentWindow.openPicker();
+            }
+        } catch(e) { console.warn('openFilestackPicker:', e); }
+    };
 })();
 </script>"""
 
