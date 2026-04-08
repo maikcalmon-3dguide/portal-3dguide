@@ -305,20 +305,28 @@ def _fs_picker_html(api_key: str) -> str:
 <script src="https://static.filestackapi.com/filestack-js/3.x.x/filestack.min.js"></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif;}}
-body{{background:#f0f9ff;padding:.6rem;}}
+html,body{{height:100%;background:#f0f9ff;}}
+body{{padding:.6rem;display:flex;flex-direction:column;gap:.5rem;}}
 #btn{{
   width:100%;background:linear-gradient(135deg,#0e4d66,#1a6b8a);
-  color:#fff;font-size:.9rem;font-weight:700;padding:.7rem 1rem;
+  color:#fff;font-size:.95rem;font-weight:700;padding:.8rem 1rem;
   border:none;border-radius:9px;cursor:pointer;
-  box-shadow:0 3px 12px rgba(14,77,102,.3);
+  box-shadow:0 3px 12px rgba(14,77,102,.3);flex-shrink:0;
 }}
 #btn:hover{{opacity:.88;}}
-#msg{{font-size:.78rem;color:#1e3a5f;margin-top:.5rem;min-height:1.2rem;}}
-#urls{{font-size:.72rem;color:#059669;margin-top:.3rem;word-break:break-all;
-       white-space:pre-wrap;display:none;}}
+#hint{{font-size:.78rem;color:#4b5563;text-align:center;}}
+#msg{{font-size:.82rem;color:#1e3a5f;min-height:1.2rem;padding:.3rem 0;}}
+#urls{{
+  font-size:.75rem;color:#059669;word-break:break-all;
+  white-space:pre-wrap;display:none;
+  background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;
+  padding:.5rem .7rem;line-height:1.6;
+}}
+#urls b{{display:block;margin-bottom:.2rem;color:#065f46;}}
 </style></head><body>
-<button id="btn">📎 Abrir janela de seleção de arquivos</button>
-<div id="msg">Clique no botão para escolher ou arrastar arquivos (qualquer tamanho)</div>
+<button id="btn">📎 Clique aqui para selecionar ou arrastar arquivos</button>
+<div id="hint">Aceita ZIP · STL · DCM · PDF · PNG · JPG · qualquer formato · qualquer tamanho</div>
+<div id="msg"></div>
 <div id="urls"></div>
 <script>
 var cl = filestack.init('{api_key}');
@@ -334,10 +342,11 @@ document.getElementById('btn').addEventListener('click', function(){{
       if(!files.length){{ setMsg('⚠️ Nenhum arquivo retornado.'); return; }}
       var newUrls = files.map(function(f){{return f.url;}}).join('|');
       accumulated = accumulated ? accumulated+'|'+newUrls : newUrls;
-      setMsg('✅ '+files.length+' arquivo(s) enviado(s). Copie o link abaixo:');
+      var count = accumulated.split('|').filter(Boolean).length;
+      setMsg('✅ '+files.length+' arquivo(s) enviado(s) agora. Total acumulado: '+count);
       var el = document.getElementById('urls');
       el.style.display='block';
-      el.textContent = accumulated;
+      el.innerHTML = '<b>🔗 Copie o link abaixo e cole no campo "Passo 2":</b>' + accumulated;
     }},
     onFileUploadFailed: function(f,e){{
       setMsg('⚠️ Erro: '+(e.message||String(e)));
@@ -381,7 +390,7 @@ def render_uploader() -> None:
             "**Passo 1:** Clique no botão abaixo para selecionar os arquivos "
             "(qualquer tamanho, inclusive tomografias de 1GB+)."
         )
-        components.html(_fs_picker_html(api_key), height=130, scrolling=False)
+        components.html(_fs_picker_html(api_key), height=520, scrolling=True)
 
         st.markdown(
             "**Passo 2:** Após o upload terminar, o link aparece em verde no widget acima. "
