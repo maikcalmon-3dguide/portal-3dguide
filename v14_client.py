@@ -307,6 +307,7 @@ def _fs_picker_html(api_key: str) -> str:
 *{{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif;}}
 html,body{{height:100%;background:#f0f9ff;}}
 body{{padding:.6rem;display:flex;flex-direction:column;gap:.5rem;}}
+
 #btn{{
   width:100%;background:linear-gradient(135deg,#0e4d66,#1a6b8a);
   color:#fff;font-size:.95rem;font-weight:700;padding:.8rem 1rem;
@@ -314,47 +315,135 @@ body{{padding:.6rem;display:flex;flex-direction:column;gap:.5rem;}}
   box-shadow:0 3px 12px rgba(14,77,102,.3);flex-shrink:0;
 }}
 #btn:hover{{opacity:.88;}}
-#hint{{font-size:.78rem;color:#4b5563;text-align:center;}}
-#msg{{font-size:.82rem;color:#1e3a5f;min-height:1.2rem;padding:.3rem 0;}}
+
+/* Área de drag-and-drop usando input nativo */
+#drop-area{{
+  border:2px dashed #1a6b8a;border-radius:10px;
+  background:#fff;padding:1.2rem;text-align:center;
+  cursor:pointer;transition:background .15s,border-color .15s;
+  position:relative;flex-shrink:0;
+}}
+#drop-area.over{{background:#dbeafe;border-color:#0e4d66;border-style:solid;}}
+#drop-area label{{
+  display:block;cursor:pointer;color:#374151;font-size:.85rem;
+  pointer-events:none;
+}}
+/* Input invisível que cobre toda a área de drop */
+#file-input{{
+  position:absolute;inset:0;width:100%;height:100%;
+  opacity:0;cursor:pointer;
+}}
+
+#hint{{font-size:.75rem;color:#6b7280;text-align:center;}}
+#msg{{font-size:.82rem;color:#1e3a5f;min-height:1.2rem;padding:.2rem 0;}}
 #urls{{
   font-size:.75rem;color:#059669;word-break:break-all;
   white-space:pre-wrap;display:none;
   background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;
-  padding:.5rem .7rem;line-height:1.6;
+  padding:.5rem .7rem;line-height:1.7;
 }}
 #urls b{{display:block;margin-bottom:.2rem;color:#065f46;}}
+#progress{{font-size:.78rem;color:#1d4ed8;display:none;}}
 </style></head><body>
-<button id="btn">📎 Clique aqui para selecionar ou arrastar arquivos</button>
-<div id="hint">Aceita ZIP · STL · DCM · PDF · PNG · JPG · qualquer formato · qualquer tamanho</div>
+
+<button id="btn">📎 Selecionar Arquivos (clique aqui)</button>
+
+<div id="drop-area">
+  <input type="file" id="file-input" multiple>
+  <label>
+    🗂️ <strong>Arraste e solte os arquivos aqui</strong><br>
+    <span style="font-size:.78rem;color:#6b7280">
+      ZIP · STL · DCM · RAR · PDF · PNG · JPG · qualquer formato · qualquer tamanho
+    </span>
+  </label>
+</div>
+
+<div id="hint">Clique no botão azul <em>ou</em> arraste para a área pontilhada</div>
+<div id="progress"></div>
 <div id="msg"></div>
 <div id="urls"></div>
+
 <script>
 var cl = filestack.init('{api_key}');
 var accumulated = '';
 
+/* ── Botão: abre o picker Filestack ─────────────────────── */
 document.getElementById('btn').addEventListener('click', function(){{
   cl.picker({{
     fromSources:['local_file_system','googledrive','dropbox'],
     maxFiles: 20,
     uploadInBackground: false,
-    onUploadDone: function(r){{
-      var files = r.filesUploaded || [];
-      if(!files.length){{ setMsg('⚠️ Nenhum arquivo retornado.'); return; }}
-      var newUrls = files.map(function(f){{return f.url;}}).join('|');
-      accumulated = accumulated ? accumulated+'|'+newUrls : newUrls;
-      var count = accumulated.split('|').filter(Boolean).length;
-      setMsg('✅ '+files.length+' arquivo(s) enviado(s) agora. Total acumulado: '+count);
-      var el = document.getElementById('urls');
-      el.style.display='block';
-      el.innerHTML = '<b>🔗 Copie o link abaixo e cole no campo "Passo 2":</b>' + accumulated;
-    }},
+    onUploadDone: function(r){{ handleDone(r.filesUploaded||[]); }},
     onFileUploadFailed: function(f,e){{
       setMsg('⚠️ Erro: '+(e.message||String(e)));
     }}
   }}).open();
 }});
 
+/* ── Input nativo: seleção por clique na área de drop ────── */
+document.getElementById('file-input').addEventListener('change', function(e){{
+  uploadFiles(Array.from(e.target.files));
+  e.target.value = '';   // reset para permitir selecionar os mesmos arquivos
+}});
+
+/* ── Drag-and-drop nativo sobre a área pontilhada ────────── */
+var dropArea = document.getElementById('drop-area');
+
+dropArea.addEventListener('dragover', function(e){{
+  e.preventDefault(); e.stopPropagation();
+  dropArea.classList.add('over');
+}});
+dropArea.addEventListener('dragleave', function(e){{
+  e.preventDefault(); e.stopPropagation();
+  dropArea.classList.remove('over');
+}});
+dropArea.addEventListener('drop', function(e){{
+  e.preventDefault(); e.stopPropagation();
+  dropArea.classList.remove('over');
+  var files = Array.from(e.dataTransfer.files);
+  if(files.length) uploadFiles(files);
+}});
+
+/* ── Upload via API do Filestack (sem picker) ────────────── */
+function uploadFiles(files){{
+  if(!files.length) return;
+  setMsg('');
+  setProgress('⏳ Enviando '+files.length+' arquivo(s)…');
+
+  Promise.all(files.map(function(f){{
+    return cl.upload(f, {{}}, {{filename: f.name}});
+  }}))
+  .then(function(results){{
+    setProgress('');
+    handleDone(results);
+  }})
+  .catch(function(err){{
+    setProgress('');
+    setMsg('⚠️ Erro no upload: '+String(err));
+  }});
+}}
+
+/* ── Callback unificado para picker e drop ───────────────── */
+function handleDone(files){{
+  if(!files||!files.length){{ setMsg('⚠️ Nenhum arquivo retornado.'); return; }}
+  var newUrls = files.map(function(f){{return f.url||''}})
+                     .filter(function(u){{return u.indexOf('http')===0;}});
+  if(!newUrls.length){{ setMsg('⚠️ URLs não encontradas.'); return; }}
+
+  accumulated = accumulated ? accumulated+'|'+newUrls.join('|') : newUrls.join('|');
+  var count = accumulated.split('|').filter(Boolean).length;
+
+  setMsg('✅ '+files.length+' arquivo(s) enviado(s). Total na fila: '+count);
+  var el = document.getElementById('urls');
+  el.style.display = 'block';
+  el.innerHTML = '<b>🔗 Copie o link e cole no campo "Passo 2" abaixo:</b>\\n' + accumulated;
+}}
+
 function setMsg(t){{ document.getElementById('msg').textContent=t; }}
+function setProgress(t){{
+  var el=document.getElementById('progress');
+  el.textContent=t; el.style.display=t?'block':'none';
+}}
 </script></body></html>"""
 
 
