@@ -423,7 +423,7 @@ def _init():
         "pp_n_implantes":   1,
         "pp_tecnica":       _TECNICAS[0],
         "pp_data_cirurgia": datetime.date.today() + datetime.timedelta(days=30),
-        "fs_url":           "",   # URL retornada pelo Filestack
+        "fs_fila":          [],    # lista de {nome, url} — upload nativo
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -431,7 +431,7 @@ def _init():
 
 
 def _reset_form():
-    for k in [k for k in st.session_state if k.startswith("pp_") or k == "fs_url"]:
+    for k in [k for k in st.session_state if k.startswith("pp_") or k == "fs_fila"]:
         del st.session_state[k]
     if "estado" in st.session_state:
         del st.session_state["estado"]
@@ -753,15 +753,6 @@ def render_formulario():
             </div>""", unsafe_allow_html=True)
 
         render_uploader()
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        arquivo_url = st.session_state.get("fs_url", "").strip()
-        if arquivo_url:
-            n_links = len([u for u in arquivo_url.split("|") if u.strip()])
-            st.success(f"✅ {n_links} arquivo(s) prontos para envio.")
-        else:
-            st.info("ℹ️ Nenhum arquivo anexado. Você pode enviar sem arquivos.")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
