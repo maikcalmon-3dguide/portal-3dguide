@@ -290,111 +290,167 @@ def ti(label, key=None, placeholder="", value="", help=None):
 
 
 # ══════════════════════════════════════════════════════════════
-# UPLOAD DE ARQUIVOS — abordagem definitiva (V12)
+# UPLOAD VIA FILESTACK CDN — arquivos grandes sem limite
 #
-# Usa st.file_uploader (nativo do Streamlit):
-#  ✅ Botão "Browse files" abre janela do sistema operacional
-#  ✅ Drag-and-drop nativo do browser para a área do uploader
-#  ✅ Múltiplos arquivos acumulados em session_state
-#  ✅ Upload direto ao Supabase Storage via requests (sem lib supabase)
-#  ✅ URL pública retornada e salva no pedido
-#  ✅ Zero JavaScript customizado — zero problemas de sandbox/iframe
+# O Filestack faz o upload diretamente do browser para o CDN
+# deles — sem passar pelo Python/Streamlit, sem limite de 50MB.
+# O dentista usa o widget, vê a URL gerada e confirma no campo.
 # ══════════════════════════════════════════════════════════════
-import uuid as _uuid
-import requests as _requests
-
-_BUCKET = "arquivos_pacientes"
+import streamlit.components.v1 as components   # noqa: E402
 
 
-def _upload_supabase(file_bytes: bytes, nome: str, mime: str) -> str | None:
-    """
-    Faz upload de um arquivo ao Supabase Storage via REST API (requests).
-    Retorna a URL pública ou None se falhar.
-    """
-    try:
-        url = st.secrets["supabase"]["url"].rstrip("/")
-        key = st.secrets["supabase"]["key"]
-    except Exception:
-        return None
+def _fs_picker_html(api_key: str) -> str:
+    """HTML auto-contido do picker Filestack. Roda dentro do iframe do Streamlit."""
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<script src="https://static.filestackapi.com/filestack-js/3.x.x/filestack.min.js"></script>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif;}}
+body{{background:#f0f9ff;padding:.6rem;}}
+#btn{{
+  width:100%;background:linear-gradient(135deg,#0e4d66,#1a6b8a);
+  color:#fff;font-size:.9rem;font-weight:700;padding:.7rem 1rem;
+  border:none;border-radius:9px;cursor:pointer;
+  box-shadow:0 3px 12px rgba(14,77,102,.3);
+}}
+#btn:hover{{opacity:.88;}}
+#msg{{font-size:.78rem;color:#1e3a5f;margin-top:.5rem;min-height:1.2rem;}}
+#urls{{font-size:.72rem;color:#059669;margin-top:.3rem;word-break:break-all;
+       white-space:pre-wrap;display:none;}}
+</style></head><body>
+<button id="btn">📎 Abrir janela de seleção de arquivos</button>
+<div id="msg">Clique no botão para escolher ou arrastar arquivos (qualquer tamanho)</div>
+<div id="urls"></div>
+<script>
+var cl = filestack.init('{api_key}');
+var accumulated = '';
 
-    ext      = nome.rsplit(".", 1)[-1] if "." in nome else "bin"
-    caminho  = f"uploads/{_uuid.uuid4().hex}.{ext}"
-    endpoint = f"{url}/storage/v1/object/{_BUCKET}/{caminho}"
+document.getElementById('btn').addEventListener('click', function(){{
+  cl.picker({{
+    fromSources:['local_file_system','googledrive','dropbox'],
+    maxFiles: 20,
+    uploadInBackground: false,
+    onUploadDone: function(r){{
+      var files = r.filesUploaded || [];
+      if(!files.length){{ setMsg('⚠️ Nenhum arquivo retornado.'); return; }}
+      var newUrls = files.map(function(f){{return f.url;}}).join('|');
+      accumulated = accumulated ? accumulated+'|'+newUrls : newUrls;
+      setMsg('✅ '+files.length+' arquivo(s) enviado(s). Copie o link abaixo:');
+      var el = document.getElementById('urls');
+      el.style.display='block';
+      el.textContent = accumulated;
+    }},
+    onFileUploadFailed: function(f,e){{
+      setMsg('⚠️ Erro: '+(e.message||String(e)));
+    }}
+  }}).open();
+}});
 
-    headers = {
-        "apikey":        key,
-        "Authorization": f"Bearer {key}",
-        "Content-Type":  mime or "application/octet-stream",
-        "x-upsert":      "true",
-    }
-    r = _requests.post(endpoint, headers=headers, data=file_bytes, timeout=120)
-    if r.status_code not in (200, 201):
-        st.error(f"❌ Erro no upload de `{nome}`: HTTP {r.status_code} — {r.text[:200]}")
-        return None
-
-    return f"{url}/storage/v1/object/public/{_BUCKET}/{caminho}"
+function setMsg(t){{ document.getElementById('msg').textContent=t; }}
+</script></body></html>"""
 
 
 def render_uploader() -> None:
     """
-    Componente de upload completo:
-    - st.file_uploader com drag-and-drop e seleção múltipla
-    - Acumula arquivos em session_state["fs_fila"] (list de dicts)
-    - Faz upload imediato ao Supabase ao detectar arquivo novo
-    - Exibe lista de confirmação com ✅ por arquivo enviado
-    - Botão para remover arquivos individualmente
+    Upload de arquivos grandes via Filestack CDN (sem limite de tamanho).
+
+    Fluxo:
+    1. Dentista clica no botão → janela do Filestack abre
+    2. Filestack faz upload direto para o CDN deles (browser → CDN)
+    3. URL aparece no widget em verde
+    4. Dentista copia e cola no campo de texto abaixo
+    5. Sistema registra e acumula as URLs
     """
     if "fs_fila" not in st.session_state:
         st.session_state["fs_fila"] = []   # [{nome, url}]
 
-    # ── Uploader nativo ──────────────────────────────────────
+    # Tenta ler a api_key do Filestack
+    try:
+        api_key = st.secrets["filestack"]["api_key"]
+        tem_filestack = bool(api_key)
+    except Exception:
+        api_key = ""
+        tem_filestack = False
+
     st.warning(
-        "⚠️ DICOM: envie a pasta compactada em **.ZIP** ou **.7z**. "
+        "⚠️ **DICOM:** envie a pasta compactada em **.ZIP** ou **.7z**. "
         "STL, fotos e PDFs podem ser individuais."
     )
 
-    arquivos = st.file_uploader(
-        "📎 Selecionar ou arrastar arquivos",
-        accept_multiple_files=True,
-        type=None,          # aceita qualquer formato, inclusive .dcm
-        key="fs_uploader",
-        help="Clique em 'Browse files' ou arraste os arquivos para esta área. "
-             "Aceita ZIP, STL, DCM, PDF, PNG, JPG e qualquer outro formato.",
-        label_visibility="visible",
-    )
+    if tem_filestack:
+        st.markdown(
+            "**Passo 1:** Clique no botão abaixo para selecionar os arquivos "
+            "(qualquer tamanho, inclusive tomografias de 1GB+)."
+        )
+        components.html(_fs_picker_html(api_key), height=130, scrolling=False)
 
-    # ── Detecta arquivos novos e faz upload imediato ─────────
-    if arquivos:
-        nomes_fila = {item["nome"] for item in st.session_state["fs_fila"]}
-        novos = [f for f in arquivos if f.name not in nomes_fila]
+        st.markdown(
+            "**Passo 2:** Após o upload terminar, o link aparece em verde no widget acima. "
+            "**Copie-o e cole no campo abaixo** para confirmar:"
+        )
+    else:
+        st.error("⚠️ Filestack não configurado. Adicione `[filestack] api_key` nos Secrets.")
+        st.info("Sem o Filestack, apenas arquivos pequenos (< 50 MB) podem ser enviados "
+                "pelo campo abaixo.")
 
-        if novos:
-            with st.spinner(f"⏳ Enviando {len(novos)} arquivo(s) para a nuvem…"):
-                for f in novos:
-                    url = _upload_supabase(f.read(), f.name,
-                                          f.type or "application/octet-stream")
-                    if url:
-                        st.session_state["fs_fila"].append(
-                            {"nome": f.name, "url": url})
-            st.rerun()   # atualiza a lista imediatamente
+    # Campo de texto — único ponto de entrada confiável JS→Python
+    # O dentista cola a URL gerada pelo widget (ou digita manualmente)
+    url_colada = st.text_input(
+        "🔗 Cole aqui a URL do arquivo após o upload",
+        placeholder="https://cdn.filestackcontent.com/...",
+        key="fs_url_input",
+        help="Após o upload terminar no widget acima, copie o link verde "
+             "e cole aqui. Para múltiplos uploads, cole cada link separado por |",
+    ).strip()
 
-    # ── Lista de confirmação ─────────────────────────────────
+    col_add, col_clear = st.columns([3, 1])
+
+    if col_add.button("➕ Adicionar à fila", key="fs_add",
+                      use_container_width=True,
+                      help="Adiciona o link colado à lista de arquivos do pedido"):
+        if url_colada:
+            # Processa múltiplos links separados por |
+            novos = [u.strip() for u in url_colada.split("|")
+                     if u.strip().startswith("http")]
+            ja_na_fila = {item["url"] for item in st.session_state["fs_fila"]}
+            adicionados = 0
+            for u in novos:
+                if u not in ja_na_fila:
+                    nome = u.rstrip("/").split("/")[-1].split("?")[0] or "arquivo"
+                    st.session_state["fs_fila"].append({"nome": nome, "url": u})
+                    adicionados += 1
+            if adicionados:
+                st.success(f"✅ {adicionados} link(s) adicionado(s) à fila.")
+                st.rerun()
+            else:
+                st.warning("Link já está na fila ou não é uma URL válida.")
+        else:
+            st.warning("Cole a URL do arquivo antes de adicionar.")
+
+    if col_clear.button("🗑️ Limpar", key="fs_clear_all",
+                        use_container_width=True):
+        st.session_state["fs_fila"] = []
+        st.rerun()
+
+    # Lista de arquivos na fila
     fila = st.session_state["fs_fila"]
     if fila:
-        st.success(f"✅ {len(fila)} arquivo(s) prontos para envio:")
+        st.success(f"**📋 {len(fila)} arquivo(s) na fila para envio:**")
         for i, item in enumerate(fila):
-            c1, c2 = st.columns([6, 1])
-            c1.markdown(f"&nbsp;&nbsp;📎 Arquivo {i+1} — `{item['nome']}`")
-            if c2.button("✕", key=f"rm_{i}",
-                         help=f"Remover {item['nome']}"):
+            c1, c2 = st.columns([7, 1])
+            c1.markdown(f"&nbsp;&nbsp;✅ **{i+1}.** `{item['nome']}`")
+            if c2.button("✕", key=f"rm_{i}", help=f"Remover {item['nome']}"):
                 st.session_state["fs_fila"].pop(i)
                 st.rerun()
+    else:
+        st.info("ℹ️ Nenhum arquivo na fila. Use o widget acima para fazer o upload.")
 
 
 def get_urls_fila() -> str:
     """Retorna todas as URLs da fila unidas por | para gravar no Supabase."""
-    return "|".join(item["url"] for item in st.session_state.get("fs_fila", [])
-                    if item.get("url", "").startswith("http"))
+    return "|".join(
+        item["url"] for item in st.session_state.get("fs_fila", [])
+        if item.get("url", "").startswith("http")
+    )
 
 
 # ══════════════════════════════════════════════════════════════
