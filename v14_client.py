@@ -701,18 +701,21 @@ def _odontograma():
 
   svg.tooth{{display:block;overflow:visible;pointer-events:none;}}
 
-  /* Legenda */
-  .legend{{
-    display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
-    margin-top:8px;padding-top:7px;
-    border-top:1px solid #e2e8f0;
+  /* Resumo de seleções */
+  .resumo{{
+    margin-top:8px;padding:7px 10px;
+    background:#f8fafc;border-radius:8px;
+    border:1px solid #e2e8f0;
+    font-size:.72rem;color:#334155;
+    min-height:22px;
+    display:none;
   }}
-  .leg-item{{
-    display:flex;align-items:center;gap:4px;
-    font-size:.68rem;color:#475569;font-weight:500;
+  .resumo-linha{{
+    display:flex;align-items:center;gap:5px;
+    line-height:1.6;
   }}
-  .leg-dot{{
-    width:12px;height:12px;border-radius:3px;flex-shrink:0;
+  .resumo-dot{{
+    width:9px;height:9px;border-radius:50%;flex-shrink:0;
   }}
 </style>
 </head>
@@ -731,6 +734,9 @@ def _odontograma():
     <div class="leg-item"><div class="leg-dot" style="background:linear-gradient(135deg,#ef4444 50%,#3b82f6 50%)"></div>Imediato</div>
     <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div>Pôntico</div>
   </div>
+
+  <!-- Resumo de seleções — atualiza instantaneamente via JS -->
+  <div class="resumo" id="resumo"></div>
 </div>
 
 <script>
@@ -1042,11 +1048,10 @@ function renderRow(ids, containerId, isInf) {{
     wrap.addEventListener('click', function() {{
       var cur = estados[num] || 0;
       estados[num] = (cur + 1) % 5;
-      // Atualiza o SVG
       document.getElementById('ts-' + num).innerHTML =
         makeTooth(num, estados[num], isInf);
-      // Envia estado ao Streamlit
-      sendEstados();
+      updateSummary();   // atualiza resumo instantaneamente
+      sendEstados();     // sincroniza com Python via query param
     }});
 
     cont.appendChild(wrap);
@@ -1060,16 +1065,50 @@ function sendEstados() {{
     var p = new URLSearchParams(window.parent.location.search);
     p.set('odo_estados', json);
     var novaUrl = window.parent.location.pathname + '?' + p.toString();
-    // replaceState atualiza a URL sem reload — o Streamlit detecta no próximo render
     window.parent.history.replaceState(null, '', novaUrl);
-    // Força o rerun do Streamlit via disparo de evento popstate
     window.parent.dispatchEvent(new PopStateEvent('popstate', {{state: null}}));
   }} catch(e) {{}}
+}}
+
+// ── Resumo de seleções — atualiza instantaneamente no widget ──
+var LABELS = ['Livre','Implante','Exodontia','Imediato','Pôntico'];
+var COLORS = ['','#3b82f6','#ef4444','#7c3aed','#f59e0b'];
+var NOMES  = ['','Implantar','Extrair','Imediato','Pôntico'];
+
+function updateSummary() {{
+  var grupos = {{1:[],2:[],3:[],4:[]}};
+  var todos  = sup.concat(inf);
+  todos.forEach(function(n) {{
+    var e = estados[n] || 0;
+    if (e >= 1 && e <= 4) grupos[e].push(n);
+  }});
+
+  var linhas = [];
+  [1,2,3,4].forEach(function(e) {{
+    var dts = grupos[e];
+    if (dts.length === 0) return;
+    linhas.push(
+      '<div class="resumo-linha">'
+      + '<div class="resumo-dot" style="background:' + COLORS[e] + '"></div>'
+      + '<strong>' + NOMES[e] + ':</strong>&nbsp;' + dts.join(', ')
+      + '</div>'
+    );
+  }});
+
+  var el = document.getElementById('resumo');
+  if (linhas.length > 0) {{
+    el.innerHTML = linhas.join('');
+    el.style.display = 'block';
+  }} else {{
+    el.style.display = 'none';
+    el.innerHTML = '';
+  }}
 }}
 
 // ── Init ─────────────────────────────────────────────────────
 renderRow(sup, 'row-sup', false);
 renderRow(inf, 'row-inf', true);
+updateSummary();
 </script>
 
 <!-- campo oculto de saída -->
@@ -1077,9 +1116,9 @@ renderRow(inf, 'row-inf', true);
 </body></html>"""
 
     # Renderiza o componente SVG
-    components.html(odo_html, height=320, scrolling=False)
+    components.html(odo_html, height=390, scrolling=False)
 
-    # Bridge: lê query param se vier do widget
+    # Bridge: lê query param se vier do widget (mantém session_state atualizado para o payload)
     qp = st.query_params.get("odo_estados", "")
     if qp:
         import json as _json
@@ -1087,7 +1126,6 @@ renderRow(inf, 'row-inf', true);
             novos = _json.loads(qp)
             st.session_state.pp_estados = {int(k): v for k, v in novos.items()}
             st.query_params.pop("odo_estados")
-            st.rerun()   # força re-render do resumo textual
         except Exception:
             pass
 
@@ -1098,19 +1136,6 @@ renderRow(inf, 'row-inf', true);
                                                   value=st.session_state.pp_prot_max)
     st.session_state.pp_prot_mand = c2.checkbox("✅ Protocolo Mandíbula",
                                                   value=st.session_state.pp_prot_mand)
-
-    # Resumo textual
-    imp  = sorted(d for d, e in estados.items() if e == 1)
-    exo  = sorted(d for d, e in estados.items() if e == 2)
-    imed = sorted(d for d, e in estados.items() if e == 3)
-    pont = sorted(d for d, e in estados.items() if e == 4)
-    linhas = []
-    if imp:  linhas.append(f"🔵 **Implantar:** {', '.join(str(d) for d in imp)}")
-    if exo:  linhas.append(f"🔴 **Extrair:** {', '.join(str(d) for d in exo)}")
-    if imed: linhas.append(f"🟣 **Imediato:** {', '.join(str(d) for d in imed)}")
-    if pont: linhas.append(f"🟢 **Pôntico:** {', '.join(str(d) for d in pont)}")
-    if linhas:
-        st.markdown("  \n".join(linhas))
 
 
 # ══════════════════════════════════════════════════════════════
