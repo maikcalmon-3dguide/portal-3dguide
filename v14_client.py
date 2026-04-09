@@ -634,38 +634,407 @@ def _prog(passo):
 # ODONTOGRAMA — 5 estados
 # ══════════════════════════════════════════════════════════════
 def _odontograma():
+    """
+    Odontograma visual anatômico com SVG.
+    Cada dente é desenhado com coroa + raiz. Clique alterna o estado:
+      0 = Livre        → dente natural (cinza-azulado)
+      1 = Implante     → implante (parafuso azul, sem raiz)
+      2 = Exodontia    → X vermelho sobre o dente
+      3 = Imediato     → X vermelho + implante (sobrepostos)
+      4 = Pôntico      → coroa amarela sem raiz
+    Bridge JS→Python via campo de texto oculto.
+    """
     estados = st.session_state.pp_estados
-    _I = {0:("",""),1:("🔵","#bfdbfe"),2:("🔴","#fecaca"),
-          3:("🟣","#e9d5ff"),4:("🟢","#bbf7d0")}
 
-    for quad, dentes in _QUADRANTES.items():
-        st.markdown(f'<div class="odo-quad">{quad}</div>', unsafe_allow_html=True)
-        cols = st.columns(len(dentes))
-        for col, d in zip(cols, dentes):
-            est   = estados.get(d, 0)
-            emoji, _ = _I[est]
-            lbl   = f"{emoji}{d}" if emoji else str(d)
-            tip   = ["Limpo","Implante","Exodontia","Imediato","Pôntico"][est]
+    # Serializa estados para JS como JSON
+    import json
+    estados_json = json.dumps(estados)
+
+    # Ordem dos dentes: superior esquerdo → direito, inferior esquerdo → direito
+    sup = [18,17,16,15,14,13,12,11, 21,22,23,24,25,26,27,28]
+    inf = [48,47,46,45,44,43,42,41, 31,32,33,34,35,36,37,38]
+
+    odo_html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif;}}
+  body{{background:transparent;padding:4px 0;}}
+
+  .odo-wrap{{
+    width:100%;max-width:760px;margin:0 auto;
+    background:#fff;border-radius:12px;padding:10px 8px 8px;
+    box-shadow:0 1px 8px rgba(0,0,0,.08);
+  }}
+
+  .jaw-label{{
+    text-align:center;font-size:.65rem;font-weight:700;
+    color:#64748b;letter-spacing:.08em;text-transform:uppercase;
+    margin-bottom:3px;
+  }}
+  .jaw-sep{{
+    border:none;border-top:1.5px dashed #cbd5e1;
+    margin:6px 4px;
+  }}
+  .jaw-row{{
+    display:flex;justify-content:center;align-items:flex-end;gap:1px;
+  }}
+  .jaw-row.inferior{{
+    align-items:flex-start;
+  }}
+
+  .tooth-wrap{{
+    display:flex;flex-direction:column;align-items:center;
+    cursor:pointer;padding:1px;border-radius:5px;
+    transition:background .12s;
+    position:relative;
+    -webkit-tap-highlight-color:transparent;
+  }}
+  .tooth-wrap:hover{{background:rgba(26,107,138,.08);}}
+  .tooth-wrap:active{{background:rgba(26,107,138,.18);}}
+
+  .tooth-num{{
+    font-size:.58rem;color:#94a3b8;font-weight:600;
+    line-height:1;margin:2px 0 0;
+    pointer-events:none;
+  }}
+  .jaw-row.inferior .tooth-num{{margin:0 0 2px;order:-1;}}
+
+  svg.tooth{{display:block;overflow:visible;pointer-events:none;}}
+
+  /* Legenda */
+  .legend{{
+    display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
+    margin-top:8px;padding-top:7px;
+    border-top:1px solid #e2e8f0;
+  }}
+  .leg-item{{
+    display:flex;align-items:center;gap:4px;
+    font-size:.68rem;color:#475569;font-weight:500;
+  }}
+  .leg-dot{{
+    width:12px;height:12px;border-radius:3px;flex-shrink:0;
+  }}
+</style>
+</head>
+<body>
+<div class="odo-wrap">
+  <div class="jaw-label">Superior</div>
+  <div class="jaw-row" id="row-sup"></div>
+  <hr class="jaw-sep">
+  <div class="jaw-row inferior" id="row-inf"></div>
+  <div class="jaw-label" style="margin-top:4px">Inferior</div>
+
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#c8dff0;border:1.5px solid #7ab3d0"></div>Livre</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#3b82f6"></div>Implante</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#ef4444"></div>Exodontia</div>
+    <div class="leg-item"><div class="leg-dot" style="background:linear-gradient(135deg,#ef4444 50%,#3b82f6 50%)"></div>Imediato</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#f59e0b"></div>Pôntico</div>
+  </div>
+</div>
+
+<script>
+// ── Estado inicial vindo do Python ──────────────────────────
+var estados = {estados_json};
+
+// Dentes em ordem de renderização
+var sup = {json.dumps(sup)};
+var inf = {json.dumps(inf)};
+
+// ── Geometrias SVG dos dentes ────────────────────────────────
+// Cada dente tem: tipo (I=incisivo, C=canino, PM=pré-molar, M=molar)
+// Molares: dente 16,17,18,26,27,28,36,37,38,46,47,48
+// Pré-molares: 14,15,24,25,34,35,44,45
+// Caninos: 13,23,33,43
+// Incisivos: resto
+
+function getTipo(n) {{
+  n = Math.abs(n % 10) || (n % 10 === 0 ? 8 : n % 10);
+  var d = n % 10;
+  if (d >= 6) return 'M';
+  if (d === 4 || d === 5) return 'PM';
+  if (d === 3) return 'C';
+  return 'I';
+}}
+
+// Larguras por tipo
+var W = {{I:18, C:20, PM:22, M:28}};
+var H = 52; // altura total do dente (coroa+raiz)
+
+function makeTooth(num, estado, isInf) {{
+  var tipo = getTipo(num);
+  var w = W[tipo];
+  var h = H;
+
+  // Proporções: coroa ocupa ~45% da altura
+  var cH = Math.round(h * 0.44);  // altura da coroa
+  var rH = h - cH;                 // altura da raiz
+
+  // Raiz mais estreita que a coroa
+  var cW = w;
+  var rW = Math.round(w * 0.45);
+  if (tipo === 'M') rW = Math.round(w * 0.55);
+
+  var cx = w / 2; // centro horizontal
+
+  // SVG paths para cada estado
+  // Coroa (sempre presente exceto implante puro)
+  // Raiz (ausente em implante, pôntico)
+
+  var svg = '<svg class="tooth" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">';
+
+  if (estado === 1) {{
+    // ── IMPLANTE: parafuso hexagonal azul, sem raiz natural ──
+    svg += implanteSVG(w, h, cx);
+
+  }} else if (estado === 2) {{
+    // ── EXODONTIA: dente natural + X vermelho ────────────────
+    svg += denteSVG(w, h, cx, cW, cH, rW, rH, isInf, '#c8dff0', '#7ab3d0', '#a8c8e0', true);
+    svg += xSVG(w, h);
+
+  }} else if (estado === 3) {{
+    // ── IMEDIATO: X vermelho + implante ──────────────────────
+    svg += implanteSVG(w, h, cx);
+    svg += xSVG(w, h);
+
+  }} else if (estado === 4) {{
+    // ── PÔNTICO: apenas coroa, cor âmbar, sem raiz ───────────
+    svg += denteSVG(w, h, cx, cW, cH, rW, rH, isInf, '#fde68a', '#f59e0b', '#fbbf24', false);
+
+  }} else {{
+    // ── LIVRE: dente natural cinza-azulado ───────────────────
+    svg += denteSVG(w, h, cx, cW, cH, rW, rH, isInf, '#c8dff0', '#7ab3d0', '#a8c8e0', true);
+  }}
+
+  svg += '</svg>';
+  return svg;
+}}
+
+function denteSVG(w, h, cx, cW, cH, rW, rH, isInf, fillC, stroke, fillR, showRoot) {{
+  var out = '';
+  var yC, yR;
+
+  if (!isInf) {{
+    // Superior: raiz vai para cima, coroa embaixo
+    yC = rH;       // coroa começa aqui
+    yR = 0;
+  }} else {{
+    // Inferior: coroa em cima, raiz vai para baixo
+    yC = 0;
+    yR = cH;
+  }}
+
+  // Coroa: retângulo arredondado com variação por tipo
+  var rx = (cW > 20) ? 4 : 3;
+  out += '<rect x="' + (cx - cW/2) + '" y="' + yC + '" width="' + cW + '" height="' + cH + '"'
+       + ' rx="' + rx + '" fill="' + fillC + '" stroke="' + stroke + '" stroke-width="1.2"/>';
+
+  // Linha oclusal (detalhe central da coroa)
+  if (cW >= 22) {{
+    // Molar: dois cúspides
+    var y1 = isInf ? yC + 3 : yC + cH - 4;
+    out += '<line x1="' + (cx - cW/2 + 3) + '" y1="' + y1 + '" x2="' + (cx + cW/2 - 3) + '" y2="' + y1 + '"'
+         + ' stroke="' + stroke + '" stroke-width="0.8" opacity="0.5"/>';
+    out += '<line x1="' + cx + '" y1="' + (isInf ? yC + 1 : yC + cH - 8) + '" x2="' + cx + '" y2="' + y1 + '"'
+         + ' stroke="' + stroke + '" stroke-width="0.8" opacity="0.5"/>';
+  }}
+
+  if (!showRoot) return out;
+
+  // Raiz: formato trapezoidal afunilado
+  var rxTop = cx - rW/2;
+  var rxBot = cx - 2;
+  var ryBot = isInf ? yR + rH : yR;
+  var ryTop = isInf ? yR : yR + rH;
+  var tipY  = isInf ? yR + rH : yR;
+
+  // Trapézio raiz
+  var x0 = cx - rW/2, x1c = cx + rW/2;
+  var y0 = isInf ? yR : yR + rH;    // lado da coroa
+  var tip = isInf ? h : 0;           // ponta da raiz
+
+  if (!isInf) {{
+    out += '<path d="M' + x0 + ',' + (yR+rH) + ' L' + x1c + ',' + (yR+rH)
+         + ' L' + (cx+2) + ',' + 0 + ' L' + (cx-2) + ',' + 0 + ' Z"'
+         + ' fill="' + fillR + '" stroke="' + stroke + '" stroke-width="1" opacity="0.85"/>';
+  }} else {{
+    out += '<path d="M' + x0 + ',' + yR + ' L' + x1c + ',' + yR
+         + ' L' + (cx+2) + ',' + h + ' L' + (cx-2) + ',' + h + ' Z"'
+         + ' fill="' + fillR + '" stroke="' + stroke + '" stroke-width="1" opacity="0.85"/>';
+  }}
+  return out;
+}}
+
+function implanteSVG(w, h, cx) {{
+  // Parafuso de implante (hexágono no topo + corpo roscado)
+  var out = '';
+  var top  = Math.round(h * 0.08);
+  var bot  = Math.round(h * 0.92);
+  var bw   = Math.round(w * 0.38);  // metade da largura do corpo
+  var hw   = Math.round(w * 0.28);  // meia cabeça (hexágono)
+  var hh   = Math.round(h * 0.14);  // altura da cabeça
+
+  // Cabeça hexagonal
+  out += '<rect x="' + (cx-hw) + '" y="' + top + '" width="' + (hw*2) + '" height="' + hh + '"'
+       + ' rx="2" fill="#1d4ed8" stroke="#1e40af" stroke-width="1"/>';
+
+  // Corpo do implante com roscas simuladas
+  var bodyTop = top + hh;
+  var bodyH   = bot - bodyTop;
+  out += '<rect x="' + (cx-bw) + '" y="' + bodyTop + '" width="' + (bw*2) + '" height="' + bodyH + '"'
+       + ' rx="' + bw + '" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1"/>';
+
+  // Roscas (linhas horizontais)
+  var nRoscas = 5;
+  for (var i = 1; i <= nRoscas; i++) {{
+    var ry = bodyTop + Math.round((bodyH / (nRoscas+1)) * i);
+    var halfW = Math.round(bw * (1 - 0.12 * Math.abs(i - nRoscas/2) / nRoscas));
+    out += '<line x1="' + (cx-halfW) + '" y1="' + ry + '" x2="' + (cx+halfW) + '" y2="' + ry + '"'
+         + ' stroke="#1d4ed8" stroke-width="1" opacity="0.6"/>';
+  }}
+
+  // Ponta cônica
+  out += '<path d="M' + (cx-bw) + ',' + (bot-4) + ' L' + cx + ',' + bot
+       + ' L' + (cx+bw) + ',' + (bot-4) + ' Z" fill="#1d4ed8"/>';
+  return out;
+}}
+
+function xSVG(w, h) {{
+  // X vermelho centralizado
+  var m = 4;
+  var t = Math.round(h * 0.1);
+  var b = Math.round(h * 0.9);
+  return '<line x1="' + m + '" y1="' + t + '" x2="' + (w-m) + '" y2="' + b + '"'
+       + ' stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>'
+       + '<line x1="' + (w-m) + '" y1="' + t + '" x2="' + m + '" y2="' + b + '"'
+       + ' stroke="#ef4444" stroke-width="2.5" stroke-linecap="round"/>';
+}}
+
+// ── Renderiza uma linha de dentes ────────────────────────────
+function renderRow(ids, containerId, isInf) {{
+  var cont = document.getElementById(containerId);
+  ids.forEach(function(num) {{
+    var wrap = document.createElement('div');
+    wrap.className = 'tooth-wrap';
+    wrap.id = 'tw-' + num;
+
+    var numDiv = document.createElement('div');
+    numDiv.className = 'tooth-num';
+    numDiv.textContent = num;
+
+    var svgDiv = document.createElement('div');
+    svgDiv.id = 'ts-' + num;
+
+    var estado = estados[num] || 0;
+    svgDiv.innerHTML = makeTooth(num, estado, isInf);
+
+    if (isInf) {{
+      wrap.appendChild(numDiv);
+      wrap.appendChild(svgDiv);
+    }} else {{
+      wrap.appendChild(svgDiv);
+      wrap.appendChild(numDiv);
+    }}
+
+    wrap.addEventListener('click', function() {{
+      var cur = estados[num] || 0;
+      estados[num] = (cur + 1) % 5;
+      // Atualiza o SVG
+      document.getElementById('ts-' + num).innerHTML =
+        makeTooth(num, estados[num], isInf);
+      // Envia estado ao Streamlit
+      sendEstados();
+    }});
+
+    cont.appendChild(wrap);
+  }});
+}}
+
+// ── Bridge: envia JSON dos estados para o Streamlit ──────────
+function sendEstados() {{
+  var json = JSON.stringify(estados);
+  // Tenta via query param (parent)
+  try {{
+    var p = new URLSearchParams(window.parent.location.search);
+    p.set('odo_estados', json);
+    window.parent.history.replaceState(null, '', window.parent.location.pathname + '?' + p.toString());
+  }} catch(e) {{}}
+  // Exibe no campo oculto para cópia manual se necessário
+  var inp = document.getElementById('odo-data');
+  if (inp) inp.value = json;
+}}
+
+// ── Init ─────────────────────────────────────────────────────
+renderRow(sup, 'row-sup', false);
+renderRow(inf, 'row-inf', true);
+</script>
+
+<!-- campo oculto de saída -->
+<input type="hidden" id="odo-data" value='{estados_json}'>
+</body></html>"""
+
+    # Renderiza o componente SVG
+    components.html(odo_html, height=240, scrolling=False)
+
+    # Bridge: lê query param se vier do widget
+    qp = st.query_params.get("odo_estados", "")
+    if qp:
+        import json as _json
+        try:
+            novos = _json.loads(qp)
+            # Converte chaves para int
+            st.session_state.pp_estados = {int(k): v for k, v in novos.items()}
+            st.query_params.pop("odo_estados")
+        except Exception:
+            pass
+
+    # ── Botões de clique (fallback confiável JS→Python) ───────
+    # O widget SVG é visual; os botões abaixo garantem a entrada de dados
+    st.markdown("**Clique no dente no diagrama acima, depois confirme abaixo:**",
+                unsafe_allow_html=False)
+
+    estados = st.session_state.pp_estados
+
+    # Legenda compacta de seleção rápida por número
+    st.markdown('<div style="display:flex;flex-wrap:wrap;gap:4px;margin:.4rem 0">', unsafe_allow_html=True)
+
+    _NOMES = {0:"Livre",1:"Implante",2:"Exodontia",3:"Imediato",4:"Pôntico"}
+    _CORES_ODO = {0:"#f1f5f9",1:"#bfdbfe",2:"#fecaca",3:"#e9d5ff",4:"#fef3c7"}
+
+    todos = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28,
+             48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38]
+
+    # Grade compacta: 8 dentes por linha (4 linhas de 8)
+    linhas_btn = [
+        [18,17,16,15,14,13,12,11],
+        [21,22,23,24,25,26,27,28],
+        [48,47,46,45,44,43,42,41],
+        [31,32,33,34,35,36,37,38],
+    ]
+    _EMOJI = {0:"",1:"🔵",2:"🔴",3:"🟣",4:"🟢"}
+
+    for linha in linhas_btn:
+        cols = st.columns(len(linha))
+        for col, d in zip(cols, linha):
+            est  = estados.get(d, 0)
+            ico  = _EMOJI[est]
+            lbl  = f"{ico}{d}" if ico else str(d)
+            tip  = _NOMES[est]
             if col.button(lbl, key=f"d_{d}", use_container_width=True, help=tip):
                 estados[d] = (est + 1) % 5
                 st.rerun()
 
-    st.markdown("""<div class="odo-leg">
-        <span style="background:#bfdbfe">🔵 Implante</span>
-        <span style="background:#fecaca">🔴 Exodontia</span>
-        <span style="background:#e9d5ff">🟣 Imediato</span>
-        <span style="background:#bbf7d0">🟢 Pôntico</span>
-        <span style="background:#f3f4f6;color:#9ca3af">Sem marcação = Livre</span>
-    </div><small style="color:#9ca3af">Clique repetido alterna em ciclo.</small>
-    """, unsafe_allow_html=True)
-
+    st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("---")
+
+    # Protocolos
     c1, c2 = st.columns(2)
     st.session_state.pp_prot_max  = c1.checkbox("✅ Protocolo Maxila",
                                                   value=st.session_state.pp_prot_max)
     st.session_state.pp_prot_mand = c2.checkbox("✅ Protocolo Mandíbula",
                                                   value=st.session_state.pp_prot_mand)
 
+    # Resumo textual
     imp  = sorted(d for d, e in estados.items() if e == 1)
     exo  = sorted(d for d, e in estados.items() if e == 2)
     imed = sorted(d for d, e in estados.items() if e == 3)
@@ -674,7 +1043,7 @@ def _odontograma():
     if imp:  linhas.append(f"🔵 **Implantar:** {', '.join(str(d) for d in imp)}")
     if exo:  linhas.append(f"🔴 **Extrair:** {', '.join(str(d) for d in exo)}")
     if imed: linhas.append(f"🟣 **Imediato:** {', '.join(str(d) for d in imed)}")
-    if pont: linhas.append(f"🟢 **Suspenso:** {', '.join(str(d) for d in pont)}")
+    if pont: linhas.append(f"🟢 **Pôntico:** {', '.join(str(d) for d in pont)}")
     if linhas:
         st.markdown("  \n".join(linhas))
 
@@ -848,8 +1217,9 @@ def render_formulario():
         st.markdown('<div class="passo-titulo">🦷 Odontograma Digital</div>',
                     unsafe_allow_html=True)
         st.markdown("""<div class="info-box">
-            Clique nos dentes para indicar o tipo de intervenção.
-            Clique repetido alterna os estados em ciclo.</div>""",
+            Visualize o odontograma acima e use os botões numerados para marcar
+            cada elemento. Clique repetido alterna: Livre → Implante → Exodontia
+            → Imediato → Pôntico → Livre.</div>""",
             unsafe_allow_html=True)
         _odontograma()
         st.markdown('</div>', unsafe_allow_html=True)
