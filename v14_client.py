@@ -701,18 +701,31 @@ def _odontograma():
 
   svg.tooth{{display:block;overflow:visible;pointer-events:none;}}
 
+  /* Legenda */
+  .legend{{
+    display:flex;flex-wrap:wrap;gap:6px;justify-content:center;
+    margin-top:8px;padding-top:7px;
+    border-top:1px solid #e2e8f0;
+  }}
+  .leg-item{{
+    display:flex;align-items:center;gap:4px;
+    font-size:.68rem;color:#475569;font-weight:500;
+  }}
+  .leg-dot{{
+    width:11px;height:11px;border-radius:3px;flex-shrink:0;
+  }}
+
   /* Resumo de seleções */
   .resumo{{
-    margin-top:8px;padding:7px 10px;
+    margin-top:6px;padding:6px 10px;
     background:#f8fafc;border-radius:8px;
     border:1px solid #e2e8f0;
     font-size:.72rem;color:#334155;
-    min-height:22px;
     display:none;
   }}
   .resumo-linha{{
     display:flex;align-items:center;gap:5px;
-    line-height:1.6;
+    line-height:1.7;
   }}
   .resumo-dot{{
     width:9px;height:9px;border-radius:50%;flex-shrink:0;
@@ -1116,7 +1129,7 @@ updateSummary();
 </body></html>"""
 
     # Renderiza o componente SVG
-    components.html(odo_html, height=390, scrolling=False)
+    components.html(odo_html, height=430, scrolling=False)
 
     # Bridge: lê query param se vier do widget (mantém session_state atualizado para o payload)
     qp = st.query_params.get("odo_estados", "")
