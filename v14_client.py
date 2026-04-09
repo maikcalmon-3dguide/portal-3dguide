@@ -757,9 +757,9 @@ function getTipo(n) {{
   return 'I';
 }}
 
-// Larguras por tipo
-var W = {{I:18, C:20, PM:22, M:28}};
-var H = 52; // altura total do dente (coroa+raiz)
+// Larguras por tipo — maiores para melhor visualização
+var W = {{I:22, C:24, PM:27, M:34}};
+var H = 66; // altura total do dente (coroa+raiz)
 
 function makeTooth(num, estado, isInf) {{
   var tipo = getTipo(num);
@@ -866,36 +866,108 @@ function denteSVG(w, h, cx, cW, cH, rW, rH, isInf, fillC, stroke, fillR, showRoo
 }}
 
 function implanteSVG(w, h, cx) {{
-  // Parafuso de implante (hexágono no topo + corpo roscado)
+  // ── Implante helicoidal realista ──────────────────────────
+  // Baseado na anatomia real: pescoço + corpo cônico com roscas helicoidais
   var out = '';
-  var top  = Math.round(h * 0.08);
-  var bot  = Math.round(h * 0.92);
-  var bw   = Math.round(w * 0.38);  // metade da largura do corpo
-  var hw   = Math.round(w * 0.28);  // meia cabeça (hexágono)
-  var hh   = Math.round(h * 0.14);  // altura da cabeça
 
-  // Cabeça hexagonal
-  out += '<rect x="' + (cx-hw) + '" y="' + top + '" width="' + (hw*2) + '" height="' + hh + '"'
-       + ' rx="2" fill="#1d4ed8" stroke="#1e40af" stroke-width="1"/>';
+  // Dimensões gerais
+  var top    = Math.round(h * 0.04);
+  var bot    = Math.round(h * 0.96);
+  var totalH = bot - top;
 
-  // Corpo do implante com roscas simuladas
-  var bodyTop = top + hh;
-  var bodyH   = bot - bodyTop;
-  out += '<rect x="' + (cx-bw) + '" y="' + bodyTop + '" width="' + (bw*2) + '" height="' + bodyH + '"'
-       + ' rx="' + bw + '" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1"/>';
+  // Pescoço (plataforma): ~18% da altura, cilíndrico
+  var neckH  = Math.round(totalH * 0.18);
+  var neckW  = Math.round(w * 0.40);
+  var neckTop = top;
+  var neckBot = top + neckH;
 
-  // Roscas (linhas horizontais)
-  var nRoscas = 5;
-  for (var i = 1; i <= nRoscas; i++) {{
-    var ry = bodyTop + Math.round((bodyH / (nRoscas+1)) * i);
-    var halfW = Math.round(bw * (1 - 0.12 * Math.abs(i - nRoscas/2) / nRoscas));
-    out += '<line x1="' + (cx-halfW) + '" y1="' + ry + '" x2="' + (cx+halfW) + '" y2="' + ry + '"'
-         + ' stroke="#1d4ed8" stroke-width="1" opacity="0.6"/>';
+  // Corpo cônico: afunila de neckW até tipW
+  var bodyTop = neckBot;
+  var bodyH   = Math.round(totalH * 0.70);
+  var bodyBot = bodyTop + bodyH;
+  var tipW    = Math.round(w * 0.10);
+  var tipH    = Math.round(totalH * 0.12);
+  var tipTop  = bodyBot;
+
+  // Gradiente do implante (azul acinzentado → azul mais escuro)
+  var gid = 'ig' + Math.round(cx);
+  out += '<defs>'
+       + '<linearGradient id="' + gid + '" x1="0" y1="0" x2="1" y2="0">'
+       + '<stop offset="0%" stop-color="#4b6cb7"/>'
+       + '<stop offset="30%" stop-color="#7ab3d0"/>'
+       + '<stop offset="60%" stop-color="#3b82f6"/>'
+       + '<stop offset="100%" stop-color="#1d4ed8"/>'
+       + '</linearGradient>'
+       + '</defs>';
+
+  // ── Pescoço (plataforma protética) ───────────────────────
+  out += '<rect x="' + (cx - neckW) + '" y="' + neckTop
+       + '" width="' + (neckW*2) + '" height="' + neckH + '"'
+       + ' rx="2" fill="url(#' + gid + ')" stroke="#1d4ed8" stroke-width="0.8"/>';
+  // Linha decorativa no pescoço
+  var midNeck = neckTop + Math.round(neckH / 2);
+  out += '<line x1="' + (cx - neckW + 2) + '" y1="' + midNeck
+       + '" x2="' + (cx + neckW - 2) + '" y2="' + midNeck
+       + '" stroke="#1e40af" stroke-width="0.6" opacity="0.5"/>';
+
+  // ── Corpo cônico com roscas helicoidais ───────────────────
+  // Perfil cônico (trapézio)
+  out += '<path d="M' + (cx - neckW) + ',' + bodyTop
+       + ' L' + (cx + neckW) + ',' + bodyTop
+       + ' L' + (cx + tipW)  + ',' + bodyBot
+       + ' L' + (cx - tipW)  + ',' + bodyBot + ' Z"'
+       + ' fill="url(#' + gid + ')" stroke="#1d4ed8" stroke-width="0.8"/>';
+
+  // Roscas helicoidais: linhas diagonais que simulam espiral
+  var nRoscas = 9;
+  var roscaH  = bodyH / nRoscas;
+  for (var i = 0; i < nRoscas; i++) {{
+    // Interpolação da largura no ponto de cada rosca
+    var t0 = i / nRoscas;
+    var t1 = (i + 1) / nRoscas;
+    var w0 = neckW - (neckW - tipW) * t0;  // meia-largura no topo da rosca
+    var w1 = neckW - (neckW - tipW) * t1;  // meia-largura na base da rosca
+    var y0r = bodyTop + Math.round(roscaH * i);
+    var y1r = bodyTop + Math.round(roscaH * (i + 1));
+    var ym  = (y0r + y1r) / 2;
+
+    // Rosca: linha diagonal da esquerda (topo da rosca) → direita (base)
+    // simulando espiral vista de frente
+    out += '<line x1="' + (cx - w0) + '" y1="' + y0r
+         + '" x2="' + (cx + w1) + '" y2="' + y1r
+         + '" stroke="#1e40af" stroke-width="1.2" opacity="0.55"/>';
+    // Linha oposta para criar o efeito 3D da hélice
+    out += '<line x1="' + (cx + w0) + '" y1="' + y0r
+         + '" x2="' + (cx - w1) + '" y2="' + y1r
+         + '" stroke="#93c5fd" stroke-width="0.5" opacity="0.35"/>';
+
+    // Projeção lateral da rosca (pequeno triângulo nas bordas)
+    var proj = Math.round(w0 * 0.22);
+    out += '<path d="M' + (cx + w0) + ',' + (y0r + 1)
+         + ' L' + (cx + w0 + proj) + ',' + ym
+         + ' L' + (cx + w1) + ',' + (y1r - 1) + ' Z"'
+         + ' fill="#1d4ed8" opacity="0.4"/>';
+    out += '<path d="M' + (cx - w0) + ',' + (y0r + 1)
+         + ' L' + (cx - w0 - proj) + ',' + ym
+         + ' L' + (cx - w1) + ',' + (y1r - 1) + ' Z"'
+         + ' fill="#60a5fa" opacity="0.25"/>';
   }}
 
-  // Ponta cônica
-  out += '<path d="M' + (cx-bw) + ',' + (bot-4) + ' L' + cx + ',' + bot
-       + ' L' + (cx+bw) + ',' + (bot-4) + ' Z" fill="#1d4ed8"/>';
+  // Brilho lateral (reflexo metálico)
+  out += '<line x1="' + (cx - Math.round(neckW * 0.55)) + '" y1="' + (bodyTop + 4)
+       + '" x2="' + (cx - Math.round(tipW * 0.6))  + '" y2="' + (bodyBot - 4)
+       + '" stroke="#bfdbfe" stroke-width="1.5" opacity="0.35" stroke-linecap="round"/>';
+
+  // ── Ponta apical cônica ────────────────────────────────────
+  out += '<path d="M' + (cx - tipW) + ',' + tipTop
+       + ' L' + cx + ',' + (tipTop + tipH)
+       + ' L' + (cx + tipW) + ',' + tipTop + ' Z"'
+       + ' fill="#1d4ed8" stroke="#1e40af" stroke-width="0.8"/>';
+  // Brilho na ponta
+  out += '<line x1="' + (cx - Math.round(tipW*0.4)) + '" y1="' + (tipTop + 2)
+       + '" x2="' + cx + '" y2="' + (tipTop + tipH - 2)
+       + '" stroke="#93c5fd" stroke-width="0.8" opacity="0.4" stroke-linecap="round"/>';
+
   return out;
 }}
 
@@ -974,7 +1046,7 @@ renderRow(inf, 'row-inf', true);
 </body></html>"""
 
     # Renderiza o componente SVG
-    components.html(odo_html, height=240, scrolling=False)
+    components.html(odo_html, height=320, scrolling=False)
 
     # Bridge: lê query param se vier do widget
     qp = st.query_params.get("odo_estados", "")
@@ -988,46 +1060,8 @@ renderRow(inf, 'row-inf', true);
         except Exception:
             pass
 
-    # ── Botões de clique (fallback confiável JS→Python) ───────
-    # O widget SVG é visual; os botões abaixo garantem a entrada de dados
-    st.markdown("**Clique no dente no diagrama acima, depois confirme abaixo:**",
-                unsafe_allow_html=False)
-
+    # ── Protocolos ────────────────────────────────────────────
     estados = st.session_state.pp_estados
-
-    # Legenda compacta de seleção rápida por número
-    st.markdown('<div style="display:flex;flex-wrap:wrap;gap:4px;margin:.4rem 0">', unsafe_allow_html=True)
-
-    _NOMES = {0:"Livre",1:"Implante",2:"Exodontia",3:"Imediato",4:"Pôntico"}
-    _CORES_ODO = {0:"#f1f5f9",1:"#bfdbfe",2:"#fecaca",3:"#e9d5ff",4:"#fef3c7"}
-
-    todos = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28,
-             48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38]
-
-    # Grade compacta: 8 dentes por linha (4 linhas de 8)
-    linhas_btn = [
-        [18,17,16,15,14,13,12,11],
-        [21,22,23,24,25,26,27,28],
-        [48,47,46,45,44,43,42,41],
-        [31,32,33,34,35,36,37,38],
-    ]
-    _EMOJI = {0:"",1:"🔵",2:"🔴",3:"🟣",4:"🟢"}
-
-    for linha in linhas_btn:
-        cols = st.columns(len(linha))
-        for col, d in zip(cols, linha):
-            est  = estados.get(d, 0)
-            ico  = _EMOJI[est]
-            lbl  = f"{ico}{d}" if ico else str(d)
-            tip  = _NOMES[est]
-            if col.button(lbl, key=f"d_{d}", use_container_width=True, help=tip):
-                estados[d] = (est + 1) % 5
-                st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown("---")
-
-    # Protocolos
     c1, c2 = st.columns(2)
     st.session_state.pp_prot_max  = c1.checkbox("✅ Protocolo Maxila",
                                                   value=st.session_state.pp_prot_max)
