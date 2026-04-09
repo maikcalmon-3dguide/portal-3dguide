@@ -784,8 +784,8 @@ function makeTooth(num, estado, isInf) {{
   var svg = '<svg class="tooth" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">';
 
   if (estado === 1) {{
-    // ── IMPLANTE: parafuso hexagonal azul, sem raiz natural ──
-    svg += implanteSVG(w, h, cx);
+    // ── IMPLANTE: parafuso helicoidal orientado pela maxila/mandíbula ──
+    svg += implanteSVG(w, h, cx, isInf);
 
   }} else if (estado === 2) {{
     // ── EXODONTIA: dente natural + X vermelho ────────────────
@@ -794,7 +794,7 @@ function makeTooth(num, estado, isInf) {{
 
   }} else if (estado === 3) {{
     // ── IMEDIATO: X vermelho + implante ──────────────────────
-    svg += implanteSVG(w, h, cx);
+    svg += implanteSVG(w, h, cx, isInf);
     svg += xSVG(w, h);
 
   }} else if (estado === 4) {{
@@ -865,9 +865,10 @@ function denteSVG(w, h, cx, cW, cH, rW, rH, isInf, fillC, stroke, fillR, showRoo
   return out;
 }}
 
-function implanteSVG(w, h, cx) {{
+function implanteSVG(w, h, cx, isInf) {{
   // ── Implante helicoidal realista ──────────────────────────
-  // Baseado na anatomia real: pescoço + corpo cônico com roscas helicoidais
+  // isInf=true  → pescoço em cima, ponta apical embaixo (mandíbula)
+  // isInf=false → pescoço embaixo, ponta apical em cima (maxila)
   var out = '';
 
   // Dimensões gerais
@@ -878,19 +879,32 @@ function implanteSVG(w, h, cx) {{
   // Pescoço (plataforma): ~18% da altura, cilíndrico
   var neckH  = Math.round(totalH * 0.18);
   var neckW  = Math.round(w * 0.40);
-  var neckTop = top;
-  var neckBot = top + neckH;
+  var tipW   = Math.round(w * 0.10);
+  var tipH   = Math.round(totalH * 0.12);
+  var bodyH  = Math.round(totalH * 0.70);
 
-  // Corpo cônico: afunila de neckW até tipW
-  var bodyTop = neckBot;
-  var bodyH   = Math.round(totalH * 0.70);
-  var bodyBot = bodyTop + bodyH;
-  var tipW    = Math.round(w * 0.10);
-  var tipH    = Math.round(totalH * 0.12);
-  var tipTop  = bodyBot;
+  // Posições dependem da orientação
+  var neckTop, neckBot, bodyTop, bodyBot, tipTop, tipDir;
+  if (isInf) {{
+    // Mandíbula: pescoço no topo, ponta apical embaixo
+    neckTop = top;
+    neckBot = top + neckH;
+    bodyTop = neckBot;
+    bodyBot = bodyTop + bodyH;
+    tipTop  = bodyBot;
+    tipDir  = 1;   // ponta aponta para baixo (+y)
+  }} else {{
+    // Maxila: ponta apical no topo, pescoço embaixo
+    tipTop  = top;
+    bodyTop = tipTop + tipH;
+    bodyBot = bodyTop + bodyH;
+    neckTop = bodyBot;
+    neckBot = neckTop + neckH;
+    tipDir  = -1;  // ponta aponta para cima (-y)
+  }}
 
-  // Gradiente do implante (azul acinzentado → azul mais escuro)
-  var gid = 'ig' + Math.round(cx);
+  // Gradiente metálico
+  var gid = 'ig' + Math.round(cx * 10);
   out += '<defs>'
        + '<linearGradient id="' + gid + '" x1="0" y1="0" x2="1" y2="0">'
        + '<stop offset="0%" stop-color="#4b6cb7"/>'
@@ -900,48 +914,66 @@ function implanteSVG(w, h, cx) {{
        + '</linearGradient>'
        + '</defs>';
 
-  // ── Pescoço (plataforma protética) ───────────────────────
-  out += '<rect x="' + (cx - neckW) + '" y="' + neckTop
-       + '" width="' + (neckW*2) + '" height="' + neckH + '"'
-       + ' rx="2" fill="url(#' + gid + ')" stroke="#1d4ed8" stroke-width="0.8"/>';
-  // Linha decorativa no pescoço
-  var midNeck = neckTop + Math.round(neckH / 2);
-  out += '<line x1="' + (cx - neckW + 2) + '" y1="' + midNeck
-       + '" x2="' + (cx + neckW - 2) + '" y2="' + midNeck
-       + '" stroke="#1e40af" stroke-width="0.6" opacity="0.5"/>';
+  // ── Ponta apical cônica ────────────────────────────────────
+  if (isInf) {{
+    out += '<path d="M' + (cx - tipW) + ',' + tipTop
+         + ' L' + cx + ',' + (tipTop + tipH)
+         + ' L' + (cx + tipW) + ',' + tipTop + ' Z"'
+         + ' fill="#1d4ed8" stroke="#1e40af" stroke-width="0.8"/>';
+  }} else {{
+    out += '<path d="M' + (cx - tipW) + ',' + (tipTop + tipH)
+         + ' L' + cx + ',' + tipTop
+         + ' L' + (cx + tipW) + ',' + (tipTop + tipH) + ' Z"'
+         + ' fill="#1d4ed8" stroke="#1e40af" stroke-width="0.8"/>';
+  }}
+  // Brilho na ponta
+  var brilhoY1 = isInf ? (tipTop + 2)      : (tipTop + tipH - 2);
+  var brilhoY2 = isInf ? (tipTop + tipH - 2) : (tipTop + 2);
+  out += '<line x1="' + (cx - Math.round(tipW*0.4)) + '" y1="' + brilhoY1
+       + '" x2="' + cx + '" y2="' + brilhoY2
+       + '" stroke="#93c5fd" stroke-width="0.8" opacity="0.4" stroke-linecap="round"/>';
 
   // ── Corpo cônico com roscas helicoidais ───────────────────
-  // Perfil cônico (trapézio)
-  out += '<path d="M' + (cx - neckW) + ',' + bodyTop
-       + ' L' + (cx + neckW) + ',' + bodyTop
-       + ' L' + (cx + tipW)  + ',' + bodyBot
-       + ' L' + (cx - tipW)  + ',' + bodyBot + ' Z"'
-       + ' fill="url(#' + gid + ')" stroke="#1d4ed8" stroke-width="0.8"/>';
+  // Trapézio: largo no lado do pescoço, estreito no lado da ponta
+  if (isInf) {{
+    out += '<path d="M' + (cx - neckW) + ',' + bodyTop
+         + ' L' + (cx + neckW) + ',' + bodyTop
+         + ' L' + (cx + tipW)  + ',' + bodyBot
+         + ' L' + (cx - tipW)  + ',' + bodyBot + ' Z"'
+         + ' fill="url(#' + gid + ')" stroke="#1d4ed8" stroke-width="0.8"/>';
+  }} else {{
+    out += '<path d="M' + (cx - tipW)  + ',' + bodyTop
+         + ' L' + (cx + tipW)  + ',' + bodyTop
+         + ' L' + (cx + neckW) + ',' + bodyBot
+         + ' L' + (cx - neckW) + ',' + bodyBot + ' Z"'
+         + ' fill="url(#' + gid + ')" stroke="#1d4ed8" stroke-width="0.8"/>';
+  }}
 
-  // Roscas helicoidais: linhas diagonais que simulam espiral
+  // Roscas helicoidais (orientação relativa ao corpo)
   var nRoscas = 9;
   var roscaH  = bodyH / nRoscas;
   for (var i = 0; i < nRoscas; i++) {{
-    // Interpolação da largura no ponto de cada rosca
     var t0 = i / nRoscas;
     var t1 = (i + 1) / nRoscas;
-    var w0 = neckW - (neckW - tipW) * t0;  // meia-largura no topo da rosca
-    var w1 = neckW - (neckW - tipW) * t1;  // meia-largura na base da rosca
+    // Largura: interpola de neckW→tipW (mandíbula) ou tipW→neckW (maxila)
+    var w0, w1;
+    if (isInf) {{
+      w0 = neckW - (neckW - tipW) * t0;
+      w1 = neckW - (neckW - tipW) * t1;
+    }} else {{
+      w0 = tipW + (neckW - tipW) * t0;
+      w1 = tipW + (neckW - tipW) * t1;
+    }}
     var y0r = bodyTop + Math.round(roscaH * i);
     var y1r = bodyTop + Math.round(roscaH * (i + 1));
     var ym  = (y0r + y1r) / 2;
 
-    // Rosca: linha diagonal da esquerda (topo da rosca) → direita (base)
-    // simulando espiral vista de frente
     out += '<line x1="' + (cx - w0) + '" y1="' + y0r
          + '" x2="' + (cx + w1) + '" y2="' + y1r
          + '" stroke="#1e40af" stroke-width="1.2" opacity="0.55"/>';
-    // Linha oposta para criar o efeito 3D da hélice
     out += '<line x1="' + (cx + w0) + '" y1="' + y0r
          + '" x2="' + (cx - w1) + '" y2="' + y1r
          + '" stroke="#93c5fd" stroke-width="0.5" opacity="0.35"/>';
-
-    // Projeção lateral da rosca (pequeno triângulo nas bordas)
     var proj = Math.round(w0 * 0.22);
     out += '<path d="M' + (cx + w0) + ',' + (y0r + 1)
          + ' L' + (cx + w0 + proj) + ',' + ym
@@ -953,20 +985,19 @@ function implanteSVG(w, h, cx) {{
          + ' fill="#60a5fa" opacity="0.25"/>';
   }}
 
-  // Brilho lateral (reflexo metálico)
+  // Brilho lateral
   out += '<line x1="' + (cx - Math.round(neckW * 0.55)) + '" y1="' + (bodyTop + 4)
-       + '" x2="' + (cx - Math.round(tipW * 0.6))  + '" y2="' + (bodyBot - 4)
+       + '" x2="' + (cx - Math.round(tipW * 0.6)) + '" y2="' + (bodyBot - 4)
        + '" stroke="#bfdbfe" stroke-width="1.5" opacity="0.35" stroke-linecap="round"/>';
 
-  // ── Ponta apical cônica ────────────────────────────────────
-  out += '<path d="M' + (cx - tipW) + ',' + tipTop
-       + ' L' + cx + ',' + (tipTop + tipH)
-       + ' L' + (cx + tipW) + ',' + tipTop + ' Z"'
-       + ' fill="#1d4ed8" stroke="#1e40af" stroke-width="0.8"/>';
-  // Brilho na ponta
-  out += '<line x1="' + (cx - Math.round(tipW*0.4)) + '" y1="' + (tipTop + 2)
-       + '" x2="' + cx + '" y2="' + (tipTop + tipH - 2)
-       + '" stroke="#93c5fd" stroke-width="0.8" opacity="0.4" stroke-linecap="round"/>';
+  // ── Pescoço (plataforma protética) ───────────────────────
+  out += '<rect x="' + (cx - neckW) + '" y="' + neckTop
+       + '" width="' + (neckW*2) + '" height="' + neckH + '"'
+       + ' rx="2" fill="url(#' + gid + ')" stroke="#1d4ed8" stroke-width="0.8"/>';
+  var midNeck = neckTop + Math.round(neckH / 2);
+  out += '<line x1="' + (cx - neckW + 2) + '" y1="' + midNeck
+       + '" x2="' + (cx + neckW - 2) + '" y2="' + midNeck
+       + '" stroke="#1e40af" stroke-width="0.6" opacity="0.5"/>';
 
   return out;
 }}
@@ -1022,18 +1053,18 @@ function renderRow(ids, containerId, isInf) {{
   }});
 }}
 
-// ── Bridge: envia JSON dos estados para o Streamlit ──────────
+// ── Bridge: envia JSON dos estados e força rerun do Streamlit ──
 function sendEstados() {{
   var json = JSON.stringify(estados);
-  // Tenta via query param (parent)
   try {{
     var p = new URLSearchParams(window.parent.location.search);
     p.set('odo_estados', json);
-    window.parent.history.replaceState(null, '', window.parent.location.pathname + '?' + p.toString());
+    var novaUrl = window.parent.location.pathname + '?' + p.toString();
+    // replaceState atualiza a URL sem reload — o Streamlit detecta no próximo render
+    window.parent.history.replaceState(null, '', novaUrl);
+    // Força o rerun do Streamlit via disparo de evento popstate
+    window.parent.dispatchEvent(new PopStateEvent('popstate', {{state: null}}));
   }} catch(e) {{}}
-  // Exibe no campo oculto para cópia manual se necessário
-  var inp = document.getElementById('odo-data');
-  if (inp) inp.value = json;
 }}
 
 // ── Init ─────────────────────────────────────────────────────
@@ -1054,9 +1085,9 @@ renderRow(inf, 'row-inf', true);
         import json as _json
         try:
             novos = _json.loads(qp)
-            # Converte chaves para int
             st.session_state.pp_estados = {int(k): v for k, v in novos.items()}
             st.query_params.pop("odo_estados")
+            st.rerun()   # força re-render do resumo textual
         except Exception:
             pass
 
