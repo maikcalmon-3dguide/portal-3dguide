@@ -1525,9 +1525,28 @@ def render_formulario():
         imed_s = ",".join(str(d) for d, e in sorted(estados.items()) if e == 3)
         pont_s = ",".join(str(d) for d, e in sorted(estados.items()) if e == 4)
 
+        # ── Aviso no topo do passo 5 ─────────────────────────
+        st.markdown("""
+        <div style="background:#eff6ff;border-left:5px solid #1a6b8a;
+                    border-radius:0 10px 10px 0;padding:14px 18px;
+                    margin-bottom:16px">
+            <div style="font-size:1.05rem;font-weight:700;color:#0e4d66;
+                        margin-bottom:4px">
+                ✅ Quase lá! Confira o resumo e finalize o envio.
+            </div>
+            <div style="font-size:.92rem;color:#374151;line-height:1.6">
+                <b>O envio de arquivos não é obrigatório para finalizar a solicitação.</b>
+                Você pode enviar a tomografia e demais arquivos do caso depois,
+                pelos canais descritos no recibo que será gerado.<br>
+                Confira o resumo da solicitação abaixo e clique em
+                <b>🚀 Enviar Pedido para a 3D Guide</b> para concluir.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         # ── Upload Filestack ──────────────────────────────────
         st.markdown('<div class="passo-card">', unsafe_allow_html=True)
-        st.markdown('<div class="passo-titulo">📎 Arquivos do Caso</div>',
+        st.markdown('<div class="passo-titulo">📎 Arquivos do Caso (opcional)</div>',
                     unsafe_allow_html=True)
         st.markdown("""<div class="info-box">
             Selecione ou arraste os arquivos do caso. O upload é feito
