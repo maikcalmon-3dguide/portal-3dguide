@@ -1478,6 +1478,259 @@ def render_formulario():
                     st.caption("Tente novamente ou entre em contato via WhatsApp.")
 
 
+
+# ══════════════════════════════════════════════════════════════
+# PDF DE SOLICITAÇÃO DE PLANEJAMENTO
+# Gerado após envio — dentista pode imprimir ou salvar
+# ══════════════════════════════════════════════════════════════
+
+def _gerar_pdf_solicitacao(payload: dict, estados: dict) -> bytes:
+    """
+    Gera PDF A4 com todos os dados do pedido + instruções de envio de arquivos.
+    Retorna bytes prontos para st.download_button.
+    """
+    try:
+        from reportlab.pdfgen import canvas as rl_canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors as rl_colors
+        from reportlab.lib.colors import HexColor
+        from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
+                                        Paragraph, Spacer, HRFlowable)
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+        from reportlab.lib.units import mm
+        import io as _io
+    except ImportError:
+        return b""
+
+    COR_H = HexColor("#0e4d66")
+    COR_A = HexColor("#1a6b8a")
+    COR_BG = HexColor("#e8f1f8")
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=18*mm, rightMargin=18*mm,
+                            topMargin=15*mm, bottomMargin=15*mm)
+
+    s_h   = ParagraphStyle("h",  fontSize=16, fontName="Helvetica-Bold",
+                            textColor=COR_H, leading=20)
+    s_sub = ParagraphStyle("s",  fontSize=9,  fontName="Helvetica",
+                            textColor=HexColor("#444444"), leading=13)
+    s_lbl = ParagraphStyle("l",  fontSize=8,  fontName="Helvetica-Bold",
+                            textColor=HexColor("#555555"))
+    s_val = ParagraphStyle("v",  fontSize=9,  fontName="Helvetica",
+                            textColor=HexColor("#1c2b36"))
+    s_sec = ParagraphStyle("sc", fontSize=10, fontName="Helvetica-Bold",
+                            textColor=COR_H, leading=14,
+                            spaceBefore=4*mm)
+    s_inf = ParagraphStyle("i",  fontSize=8.5, fontName="Helvetica",
+                            textColor=HexColor("#374151"), leading=13)
+    s_sm  = ParagraphStyle("sm", fontSize=7.5, fontName="Helvetica",
+                            textColor=HexColor("#888888"),
+                            alignment=TA_CENTER)
+
+    story = []
+
+    # ── Cabeçalho branco — logo | título | data ───────────────
+    logo_p = SCRIPT_DIR / "logo_planning.png"
+    if logo_p.exists():
+        from reportlab.platypus import Image as RLImage
+        logo_el = RLImage(str(logo_p), width=45*mm, height=14*mm)
+    else:
+        logo_el = Paragraph("3D Guide", s_h)
+
+    data_emissao = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    ht = Table(
+        [[logo_el,
+          Paragraph("SOLICITAÇÃO DE PLANEJAMENTO CIRÚRGICO", s_h),
+          Paragraph(f"<b>Data:</b> {data_emissao}", s_sub)]],
+        colWidths=[50*mm, 95*mm, 47*mm],
+    )
+    ht.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0),(-1,-1), rl_colors.white),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+        ("LEFTPADDING",   (0,0),(0,-1),  0),
+        ("LEFTPADDING",   (1,0),(-1,-1), 6),
+        ("RIGHTPADDING",  (0,0),(-1,-1), 5),
+        ("TOPPADDING",    (0,0),(-1,-1), 3),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 3),
+        ("LINEBELOW",     (0,0),(-1,-1), 2, COR_A),
+    ]))
+    story += [ht, Spacer(1, 5*mm)]
+
+    # ── Dados do Profissional ─────────────────────────────────
+    story.append(Paragraph("DADOS DO PROFISSIONAL", s_sec))
+    story.append(Spacer(1, 1.5*mm))
+    dados_prof = [
+        ["Profissional:", payload.get("profissional","—"),
+         "Clínica:",      payload.get("clinica_origem","—")],
+        ["E-mail:",       payload.get("email","—"),
+         "WhatsApp:",     payload.get("whatsapp","—")],
+    ]
+    tp = Table(dados_prof, colWidths=[28*mm, 66*mm, 22*mm, 66*mm])
+    tp.setStyle(TableStyle([
+        ("FONTNAME",  (0,0),(0,-1), "Helvetica-Bold"),
+        ("FONTNAME",  (2,0),(2,-1), "Helvetica-Bold"),
+        ("FONTSIZE",  (0,0),(-1,-1), 9),
+        ("TEXTCOLOR", (0,0),(0,-1), HexColor("#555555")),
+        ("TEXTCOLOR", (2,0),(2,-1), HexColor("#555555")),
+        ("TOPPADDING",(0,0),(-1,-1), 3),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 3),
+        ("GRID",      (0,0),(-1,-1), 0.3, HexColor("#d1d5db")),
+        ("BACKGROUND",(0,0),(0,-1), COR_BG),
+        ("BACKGROUND",(2,0),(2,-1), COR_BG),
+    ]))
+    story += [tp, Spacer(1, 4*mm)]
+
+    # ── Dados do Caso ─────────────────────────────────────────
+    story.append(Paragraph("DADOS DO CASO", s_sec))
+    story.append(Spacer(1, 1.5*mm))
+    dados_caso = [
+        ["Paciente:", payload.get("paciente","—"),
+         "Data Cirurgia:", payload.get("data_cirurgia","—")],
+        ["Marca:", payload.get("marca_implante","—"),
+         "Modelo:", payload.get("modelo_implante","—")],
+        ["Kit:", payload.get("kit_cirurgico","—"),
+         "Conexão:", payload.get("conexao","—")],
+        ["Técnica:", payload.get("tecnica","—"),
+         "Nº Implantes:", str(payload.get("num_implantes","—"))],
+    ]
+    tc = Table(dados_caso, colWidths=[28*mm, 66*mm, 28*mm, 60*mm])
+    tc.setStyle(TableStyle([
+        ("FONTNAME",  (0,0),(0,-1), "Helvetica-Bold"),
+        ("FONTNAME",  (2,0),(2,-1), "Helvetica-Bold"),
+        ("FONTSIZE",  (0,0),(-1,-1), 9),
+        ("TEXTCOLOR", (0,0),(0,-1), HexColor("#555555")),
+        ("TEXTCOLOR", (2,0),(2,-1), HexColor("#555555")),
+        ("TOPPADDING",(0,0),(-1,-1), 3),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 3),
+        ("GRID",      (0,0),(-1,-1), 0.3, HexColor("#d1d5db")),
+        ("BACKGROUND",(0,0),(0,-1), COR_BG),
+        ("BACKGROUND",(2,0),(2,-1), COR_BG),
+    ]))
+    story += [tc, Spacer(1, 3*mm)]
+
+    # Descrição do caso
+    desc = payload.get("descricao_caso","").strip()
+    if desc:
+        story.append(Paragraph("<b>Descrição do caso:</b>", s_lbl))
+        story.append(Spacer(1, 1*mm))
+        story.append(Paragraph(desc, s_inf))
+        story.append(Spacer(1, 3*mm))
+
+    # ── Odontograma em texto ──────────────────────────────────
+    story.append(Paragraph("MAPA CIRÚRGICO (ODONTOGRAMA)", s_sec))
+    story.append(Spacer(1, 1.5*mm))
+
+    nomes_estado = {1:"🔵 Implante", 2:"🔴 Exodontia",
+                    3:"🟣 Imediato", 4:"🟢 Pôntico/Suspenso"}
+    grupos = {}
+    for dente, estado in sorted(estados.items()):
+        if estado and estado in nomes_estado:
+            grupos.setdefault(estado, []).append(str(dente))
+
+    imp_s  = payload.get("dentes_implante","")
+    exo_s  = payload.get("dentes_exodontia","")
+    imed_s = payload.get("dentes_imediato","")
+    pont_s = payload.get("dentes_pontico","")
+    prot_max  = payload.get("protocolo_maxila", 0)
+    prot_mand = payload.get("protocolo_mandib", 0)
+
+    odo_rows = []
+    if imp_s:  odo_rows.append(["🔵 Implante",          imp_s])
+    if exo_s:  odo_rows.append(["🔴 Exodontia",         exo_s])
+    if imed_s: odo_rows.append(["🟣 Imediato",           imed_s])
+    if pont_s: odo_rows.append(["🟢 Pôntico/Suspenso",  pont_s])
+    if prot_max:  odo_rows.append(["✅ Protocolo",        "Maxila"])
+    if prot_mand: odo_rows.append(["✅ Protocolo",        "Mandíbula"])
+
+    if odo_rows:
+        to = Table(odo_rows, colWidths=[45*mm, 137*mm])
+        to.setStyle(TableStyle([
+            ("FONTNAME",    (0,0),(0,-1), "Helvetica-Bold"),
+            ("FONTSIZE",    (0,0),(-1,-1), 9),
+            ("TEXTCOLOR",   (0,0),(0,-1), HexColor("#374151")),
+            ("TOPPADDING",  (0,0),(-1,-1), 3),
+            ("BOTTOMPADDING",(0,0),(-1,-1), 3),
+            ("GRID",        (0,0),(-1,-1), 0.3, HexColor("#d1d5db")),
+            ("ROWBACKGROUNDS",(0,0),(-1,-1),
+             [rl_colors.white, HexColor("#f4f8fb")]),
+        ]))
+        story += [to, Spacer(1, 5*mm)]
+    else:
+        story.append(Paragraph("Nenhum elemento marcado no odontograma.", s_inf))
+        story.append(Spacer(1, 5*mm))
+
+    # ── Instruções de envio de arquivos ──────────────────────
+    story.append(HRFlowable(width="100%", thickness=1.5, color=COR_A))
+    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph("📁 ENVIO DE ARQUIVOS DO CASO", s_sec))
+    story.append(Spacer(1, 2*mm))
+    story.append(Paragraph(
+        "Para garantir o melhor resultado do seu planejamento, envie os arquivos "
+        "do caso por uma das formas abaixo. Sempre identifique os arquivos com "
+        "<b>Nome do Paciente</b> e <b>Data da Cirurgia</b>.",
+        s_inf))
+    story.append(Spacer(1, 3*mm))
+
+    instrucoes = [
+        ["🌐  Portal 3D Guide (preferencial)",
+         "www.3dguide.com.br\n"
+         "Faça o upload diretamente no formulário do site durante o preenchimento."],
+        ["📧  E-mail",
+         "planejamento@3dguide.com.br\n"
+         "Envie os arquivos como anexo. Indique no assunto: "
+         "[CASE] Nome do Paciente."],
+        ["💧  WeTransfer",
+         "www.wetransfer.com  →  enviar para: planejamento@3dguide.com.br\n"
+         "Ideal para arquivos grandes (tomografias, STL, etc.)."],
+        ["📱  iDoc / Dropbox / Google Drive",
+         "Compartilhe o link de acesso via WhatsApp ou e-mail.\n"
+         "Certifique-se de que o link esteja público ou compartilhado com "
+         "planejamento@3dguide.com.br."],
+        ["📲  WhatsApp",
+         "(27) 9 9999-9999  —  apenas para arquivos pequenos (< 16 MB).\n"
+         "Para arquivos maiores utilize as opções acima."],
+    ]
+
+    ti_tbl = Table(instrucoes, colWidths=[52*mm, 130*mm])
+    ti_tbl.setStyle(TableStyle([
+        ("FONTNAME",     (0,0),(0,-1), "Helvetica-Bold"),
+        ("FONTSIZE",     (0,0),(-1,-1), 8.5),
+        ("TEXTCOLOR",    (0,0),(0,-1), COR_H),
+        ("TOPPADDING",   (0,0),(-1,-1), 4),
+        ("BOTTOMPADDING",(0,0),(-1,-1), 4),
+        ("LEFTPADDING",  (0,0),(-1,-1), 5),
+        ("GRID",         (0,0),(-1,-1), 0.3, HexColor("#d1d5db")),
+        ("ROWBACKGROUNDS",(0,0),(-1,-1),
+         [rl_colors.white, HexColor("#f0f7ff")]),
+        ("VALIGN",       (0,0),(-1,-1), "TOP"),
+    ]))
+    story += [ti_tbl, Spacer(1, 5*mm)]
+
+    # Arquivos já enviados pelo portal
+    urls = payload.get("arquivo_url","").strip()
+    if urls:
+        story.append(Paragraph(
+            f"<b>✅ Arquivos enviados pelo portal:</b> "
+            f"{len(urls.split('|'))} arquivo(s) registrado(s).",
+            s_inf))
+        story.append(Spacer(1, 3*mm))
+
+    # Rodapé
+    story.append(HRFlowable(width="100%", thickness=0.5,
+                            color=HexColor("#d1d5db")))
+    story.append(Spacer(1, 2*mm))
+    story.append(Paragraph(
+        f"Pedido gerado em {data_emissao} | 3D Guide Dental Solutions | "
+        "www.3dguide.com.br",
+        s_sm))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
 # ══════════════════════════════════════════════════════════════
 # TELA DE SUCESSO
 # ══════════════════════════════════════════════════════════════
@@ -1492,9 +1745,71 @@ def render_sucesso():
     </div>
     """, unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── PDF de solicitação ────────────────────────────────────
+    payload_atual = {
+        "profissional":   st.session_state.get("pp_prof",""),
+        "clinica_origem": st.session_state.get("pp_clinica",""),
+        "email":          st.session_state.get("pp_email",""),
+        "whatsapp":       st.session_state.get("pp_whats",""),
+        "paciente":       st.session_state.get("pp_pac",""),
+        "data_cirurgia":  st.session_state.get("pp_data_cirurgia",
+                           datetime.date.today()).strftime("%d/%m/%Y"),
+        "marca_implante": st.session_state.get("pp_marca",""),
+        "modelo_implante":st.session_state.get("pp_modelo",""),
+        "kit_cirurgico":  st.session_state.get("pp_kit",""),
+        "conexao":        st.session_state.get("pp_conexao",""),
+        "tecnica":        st.session_state.get("pp_tecnica",""),
+        "num_implantes":  st.session_state.get("pp_n_implantes",""),
+        "descricao_caso": st.session_state.get("pp_descricao",""),
+        "arquivo_url":    "|".join(st.session_state.get("fs_fila",[])),
+        "dentes_implante": ",".join(
+            str(d) for d,e in sorted(
+                st.session_state.get("pp_estados",{}).items()) if e==1),
+        "dentes_exodontia": ",".join(
+            str(d) for d,e in sorted(
+                st.session_state.get("pp_estados",{}).items()) if e==2),
+        "dentes_imediato": ",".join(
+            str(d) for d,e in sorted(
+                st.session_state.get("pp_estados",{}).items()) if e==3),
+        "dentes_pontico": ",".join(
+            str(d) for d,e in sorted(
+                st.session_state.get("pp_estados",{}).items()) if e==4),
+        "protocolo_maxila":  int(st.session_state.get("pp_prot_max",0)),
+        "protocolo_mandib":  int(st.session_state.get("pp_prot_mand",0)),
+    }
+    estados_atuais = st.session_state.get("pp_estados", {})
+
+    pdf_bytes = _gerar_pdf_solicitacao(payload_atual, estados_atuais)
+
+    if pdf_bytes:
+        nome_pac = re.sub(r'[\\/:*?"<>|]', "_",
+                          payload_atual["paciente"].upper().strip() or "CASO")
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        nome_pdf = f"Solicitacao_Planejamento_{nome_pac}_{ts}.pdf"
+
+        st.markdown(
+            '<div style="background:#eff6ff;border-left:4px solid #1a6b8a;'
+            'padding:.8rem 1rem;border-radius:0 8px 8px 0;margin-bottom:1rem">'
+            '<b>📄 Solicitação de Planejamento</b><br>'
+            '<span style="font-size:.85rem;color:#374151">'
+            'Baixe o PDF com todos os dados do seu pedido e as instruções '
+            'para envio dos arquivos do caso (tomografia, STL, etc.).</span>'
+            '</div>',
+            unsafe_allow_html=True)
+
+        st.download_button(
+            label="⬇️ Baixar PDF da Solicitação",
+            data=pdf_bytes,
+            file_name=nome_pdf,
+            mime="application/pdf",
+            use_container_width=True,
+            type="primary",
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+
     col = st.columns([1, 2, 1])[1]
-    if col.button("📋 Enviar outro pedido", type="primary",
-                  use_container_width=True):
+    if col.button("📋 Enviar outro pedido", use_container_width=True):
         _reset_form()
         st.rerun()
 
