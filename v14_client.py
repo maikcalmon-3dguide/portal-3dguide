@@ -1679,18 +1679,19 @@ def _gerar_pdf_solicitacao(payload: dict, estados: dict) -> bytes:
          "www.3dguide.com.br\n"
          "Faça o upload diretamente no formulário do site durante o preenchimento."],
         ["📧  E-mail",
-         "planejamento@3dguide.com.br\n"
+         "maikcalmon@hotmail.com\n"
          "Envie os arquivos como anexo. Indique no assunto: "
          "[CASE] Nome do Paciente."],
-        ["💧  WeTransfer",
-         "www.wetransfer.com  →  enviar para: planejamento@3dguide.com.br\n"
-         "Ideal para arquivos grandes (tomografias, STL, etc.)."],
+        ["💧  WeTransfer / Smash / TransferNow",
+         "www.wetransfer.com  |  www.fromsmash.com  |  www.transfernow.net\n"
+         "Ideal para arquivos grandes (tomografias, STL, etc.). "
+         "Envie o link para maikcalmon@hotmail.com ou via WhatsApp."],
         ["📱  iDoc / Dropbox / Google Drive",
          "Compartilhe o link de acesso via WhatsApp ou e-mail.\n"
          "Certifique-se de que o link esteja público ou compartilhado com "
-         "planejamento@3dguide.com.br."],
+         "maikcalmon@hotmail.com."],
         ["📲  WhatsApp",
-         "(27) 9 9999-9999  —  apenas para arquivos pequenos (< 16 MB).\n"
+         "(27) 99730-0521  —  apenas para arquivos pequenos (< 16 MB).\n"
          "Para arquivos maiores utilize as opções acima."],
     ]
 
