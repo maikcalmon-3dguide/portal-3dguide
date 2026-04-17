@@ -19,6 +19,7 @@ Arquivos na mesma pasta:
 import streamlit as st
 import streamlit.components.v1 as components   # obrigatório conforme requisito
 import datetime
+import re
 from pathlib import Path
 from supabase import create_client, Client
 
