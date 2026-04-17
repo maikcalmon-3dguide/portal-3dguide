@@ -1179,8 +1179,7 @@ def render_landing():
     if dente_icon.exists():
         dente_b64 = base64.b64encode(dente_icon.read_bytes()).decode()
         icone_html = (f'<img src="data:image/png;base64,{dente_b64}" '
-                      f'style="height:72px;width:auto;vertical-align:middle;'
-                      f'margin-right:12px;opacity:.92" '
+                      f'style="height:56px;width:auto;flex-shrink:0;opacity:.92" '
                       f'alt="Implante Digital 3D Guide">')
     else:
         icone_html = ""
@@ -1188,7 +1187,10 @@ def render_landing():
     st.markdown(f"""
     <div class="hero-wrapper">
       <div class="hero-left">
-        <h1>{icone_html}O Futuro da Implantodontia Digital está Aqui.</h1>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          {icone_html}
+          <h1 style="margin:0;line-height:1.15">O Futuro da Implantodontia Digital está Aqui.</h1>
+        </div>
         <div class="sub">Precisão cirúrgica e suporte especializado
         para o seu planejamento virtual.</div>
         <p>
