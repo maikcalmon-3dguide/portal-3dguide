@@ -1830,28 +1830,37 @@ def _gerar_pdf_solicitacao(payload: dict, estados: dict) -> bytes:
         s_inf))
     story.append(Spacer(1, 3*mm))
 
-    instrucoes = [
-        ["🌐  Portal 3D Guide (preferencial)",
-         "www.3dguide.com.br\n"
-         "Faça o upload diretamente no formulário do site durante o preenchimento."],
-        ["📧  E-mail",
-         "maikcalmon@hotmail.com\n"
-         "Envie os arquivos como anexo. Indique no assunto: "
-         "[CASE] Nome do Paciente."],
-        ["💧  WeTransfer / Smash / TransferNow",
-         "www.wetransfer.com  |  www.fromsmash.com  |  www.transfernow.net\n"
-         "Ideal para arquivos grandes (tomografias, STL, etc.). "
-         "Envie o link para maikcalmon@hotmail.com ou via WhatsApp."],
-        ["📱  iDoc / Dropbox / Google Drive",
-         "Compartilhe o link de acesso via WhatsApp ou e-mail.\n"
-         "Certifique-se de que o link esteja público ou compartilhado com "
-         "maikcalmon@hotmail.com."],
-        ["📲  WhatsApp",
-         "(27) 99730-0521  —  apenas para arquivos pequenos (< 16 MB).\n"
-         "Para arquivos maiores utilize as opções acima."],
+    s_tbl_key = ParagraphStyle("tk", fontSize=8.5, fontName="Helvetica-Bold",
+                                textColor=COR_H, leading=12)
+    s_tbl_val = ParagraphStyle("tv", fontSize=8.5, fontName="Helvetica",
+                                textColor=HexColor("#374151"), leading=12)
+
+    instrucoes_rows = [
+        [Paragraph("🌐  Portal 3D Guide<br/>(preferencial)", s_tbl_key),
+         Paragraph("www.3dguide.com.br<br/>"
+                   "Faça o upload diretamente no formulário do site durante o preenchimento.",
+                   s_tbl_val)],
+        [Paragraph("📧  E-mail", s_tbl_key),
+         Paragraph("maikcalmon@hotmail.com<br/>"
+                   "Envie os arquivos como anexo. Indique no assunto: [CASE] Nome do Paciente.",
+                   s_tbl_val)],
+        [Paragraph("💧  WeTransfer<br/>Smash · TransferNow", s_tbl_key),
+         Paragraph("www.wetransfer.com  |  www.fromsmash.com  |  www.transfernow.net<br/>"
+                   "Ideal para arquivos grandes (tomografias, STL, DICOM, etc.).<br/>"
+                   "Envie o link gerado para: maikcalmon@hotmail.com ou via WhatsApp.",
+                   s_tbl_val)],
+        [Paragraph("📱  iDoc / Dropbox<br/>Google Drive", s_tbl_key),
+         Paragraph("Compartilhe o link de acesso via WhatsApp ou e-mail.<br/>"
+                   "Certifique-se de que o link esteja público ou compartilhado com "
+                   "maikcalmon@hotmail.com.",
+                   s_tbl_val)],
+        [Paragraph("📲  WhatsApp", s_tbl_key),
+         Paragraph("(27) 99730-0521  —  apenas para arquivos pequenos (até 16 MB).<br/>"
+                   "Para arquivos maiores utilize as opções acima.",
+                   s_tbl_val)],
     ]
 
-    ti_tbl = Table(instrucoes, colWidths=[52*mm, 130*mm])
+    ti_tbl = Table(instrucoes_rows, colWidths=[48*mm, 134*mm])
     ti_tbl.setStyle(TableStyle([
         ("FONTNAME",     (0,0),(0,-1), "Helvetica-Bold"),
         ("FONTSIZE",     (0,0),(-1,-1), 8.5),
