@@ -148,8 +148,9 @@ def inject_css(estado: str):
         display: flex; flex-direction: column; justify-content: flex-start;
     }}
     .hero-left h1 {{
-        font-size: 2.2rem; font-weight: 700; color: {_AZUL2};
-        line-height: 1.25; margin: 0 0 .75rem; letter-spacing: -.02em;
+        font-size: 1.65rem; font-weight: 700; color: {_AZUL2};
+        line-height: 1.2; margin: 0 0 .75rem; letter-spacing: -.01em;
+        white-space: nowrap;
     }}
     .hero-left .sub {{
         font-size: .95rem; font-weight: 600; color: {_AZUL}; margin-bottom: 1.1rem;
