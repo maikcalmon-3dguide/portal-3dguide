@@ -1174,10 +1174,21 @@ def render_landing():
             '</div>'
         )
 
+    # Ícone do dente em malha — isolado da logomarca
+    dente_icon = SCRIPT_DIR / "dente_mesh_icon.png"
+    if dente_icon.exists():
+        dente_b64 = base64.b64encode(dente_icon.read_bytes()).decode()
+        icone_html = (f'<img src="data:image/png;base64,{dente_b64}" '
+                      f'style="height:72px;width:auto;vertical-align:middle;'
+                      f'margin-right:12px;opacity:.92" '
+                      f'alt="Implante Digital 3D Guide">')
+    else:
+        icone_html = ""
+
     st.markdown(f"""
     <div class="hero-wrapper">
       <div class="hero-left">
-        <h1>🦾 O Futuro da Implantodontia Digital está Aqui.</h1>
+        <h1>{icone_html}O Futuro da Implantodontia Digital está Aqui.</h1>
         <div class="sub">Precisão cirúrgica e suporte especializado
         para o seu planejamento virtual.</div>
         <p>
@@ -1204,6 +1215,146 @@ def render_landing():
                   type="primary", use_container_width=True):
         st.session_state.estado = "formulario"
         st.rerun()
+
+
+
+# ══════════════════════════════════════════════════════════════
+# NOTIFICAÇÃO POR EMAIL
+# Enviado para maikcalmon@hotmail.com após cada pedido recebido
+# Configurar em .streamlit/secrets.toml:
+#   [email]
+#   smtp_server = "smtp.gmail.com"
+#   smtp_port = 587
+#   usuario = "seu_email@gmail.com"
+#   senha = "app_password_aqui"
+# ══════════════════════════════════════════════════════════════
+
+def _enviar_email_notificacao(payload: dict) -> bool:
+    """
+    Envia email de notificação para maikcalmon@hotmail.com
+    com resumo do pedido recebido.
+    Retorna True se enviado, False se falhou silenciosamente.
+    """
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+
+        cfg = st.secrets.get("email", {})
+        smtp_server = cfg.get("smtp_server", "smtp.gmail.com")
+        smtp_port   = int(cfg.get("smtp_port", 587))
+        usuario     = cfg.get("usuario", "")
+        senha       = cfg.get("senha", "")
+
+        if not (usuario and senha):
+            return False  # credenciais não configuradas — falha silenciosa
+
+        destinatario = "maikcalmon@hotmail.com"
+        prof  = payload.get("profissional","—")
+        pac   = payload.get("paciente","—")
+        clinica = payload.get("clinica_origem","—")
+        marca = payload.get("marca_implante","—")
+        modelo= payload.get("modelo_implante","—")
+        kit   = payload.get("kit_cirurgico","—")
+        data  = payload.get("data_cirurgia","—")
+        n_imp = payload.get("num_implantes","—")
+        tecnica= payload.get("tecnica","—")
+        whats = payload.get("whatsapp","—")
+        email_dr= payload.get("email","—")
+        desc  = payload.get("descricao_caso","")
+        imp_s = payload.get("dentes_implante","")
+        exo_s = payload.get("dentes_exodontia","")
+        imed_s= payload.get("dentes_imediato","")
+        pont_s= payload.get("dentes_pontico","")
+        urls  = payload.get("arquivo_url","")
+        data_envio = datetime.datetime.now().strftime("%d/%m/%Y às %H:%M")
+
+        odo_texto = ""
+        if imp_s:  odo_texto += f"  • Implante: {imp_s}\n"
+        if exo_s:  odo_texto += f"  • Exodontia: {exo_s}\n"
+        if imed_s: odo_texto += f"  • Imediato: {imed_s}\n"
+        if pont_s: odo_texto += f"  • Pôntico: {pont_s}\n"
+
+        corpo_txt = f"""
+🦷 NOVO PEDIDO DE PLANEJAMENTO — {data_envio}
+{'='*55}
+
+PROFISSIONAL
+  Nome:     {prof}
+  Clínica:  {clinica}
+  E-mail:   {email_dr}
+  WhatsApp: {whats}
+
+CASO
+  Paciente:     {pac}
+  Data cirurg.: {data}
+  Marca:        {marca}
+  Modelo:       {modelo}
+  Kit:          {kit}
+  Técnica:      {tecnica}
+  Nº implantes: {n_imp}
+
+ODONTOGRAMA
+{odo_texto if odo_texto else "  (nenhum elemento marcado)"}
+{'DESCRIÇÃO' if desc else ''}
+{'  ' + desc if desc else ''}
+
+ARQUIVOS
+  {"Enviados pelo portal: " + str(len(urls.split("|"))) + " arquivo(s)" if urls.strip() else "Nenhum arquivo enviado pelo portal ainda."}
+
+{'='*55}
+Pedido recebido via Portal 3D Guide — www.3dguide.com.br
+        """.strip()
+
+        corpo_html = f"""
+<html><body style="font-family:Arial,sans-serif;color:#1c2b36;">
+<div style="max-width:600px;margin:auto;border:1px solid #d1d5db;border-radius:8px;overflow:hidden;">
+  <div style="background:#0e4d66;padding:16px 24px;">
+    <h2 style="color:white;margin:0">🦷 Novo Pedido de Planejamento</h2>
+    <p style="color:#a8d4e6;margin:4px 0 0">Recebido em {data_envio}</p>
+  </div>
+  <div style="padding:20px 24px;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr style="background:#e8f1f8"><td colspan="2" style="padding:8px 10px;font-weight:bold;color:#0e4d66">PROFISSIONAL</td></tr>
+      <tr><td style="padding:6px 10px;color:#555;width:130px">Nome</td><td style="padding:6px 10px"><b>{prof}</b></td></tr>
+      <tr style="background:#f8fafb"><td style="padding:6px 10px;color:#555">Clínica</td><td style="padding:6px 10px">{clinica}</td></tr>
+      <tr><td style="padding:6px 10px;color:#555">E-mail</td><td style="padding:6px 10px"><a href="mailto:{email_dr}">{email_dr}</a></td></tr>
+      <tr style="background:#f8fafb"><td style="padding:6px 10px;color:#555">WhatsApp</td><td style="padding:6px 10px"><a href="https://wa.me/55{whats.replace(' ','').replace('(','').replace(')','').replace('-','')}">{whats}</a></td></tr>
+      <tr style="background:#e8f1f8"><td colspan="2" style="padding:8px 10px;font-weight:bold;color:#0e4d66">CASO CLÍNICO</td></tr>
+      <tr><td style="padding:6px 10px;color:#555">Paciente</td><td style="padding:6px 10px"><b>{pac}</b></td></tr>
+      <tr style="background:#f8fafb"><td style="padding:6px 10px;color:#555">Data Cirurgia</td><td style="padding:6px 10px">{data}</td></tr>
+      <tr><td style="padding:6px 10px;color:#555">Implante</td><td style="padding:6px 10px">{marca} {modelo} — Kit {kit}</td></tr>
+      <tr style="background:#f8fafb"><td style="padding:6px 10px;color:#555">Técnica</td><td style="padding:6px 10px">{tecnica} — {n_imp} implante(s)</td></tr>
+      {"<tr><td colspan='2' style='padding:8px 10px;background:#e8f1f8;font-weight:bold;color:#0e4d66'>ODONTOGRAMA</td></tr><tr><td colspan='2' style='padding:8px 10px;font-family:monospace'>" + odo_texto.replace(chr(10),'<br>') + "</td></tr>" if odo_texto else ""}
+      {"<tr style='background:#e8f1f8'><td colspan='2' style='padding:8px 10px;font-weight:bold;color:#0e4d66'>DESCRIÇÃO</td></tr><tr><td colspan='2' style='padding:8px 10px'>" + desc + "</td></tr>" if desc else ""}
+      <tr style="background:#e8f1f8"><td colspan="2" style="padding:8px 10px;font-weight:bold;color:#0e4d66">ARQUIVOS</td></tr>
+      <tr><td colspan="2" style="padding:8px 10px">{"✅ " + str(len(urls.split("|"))) + " arquivo(s) enviado(s) pelo portal." if urls.strip() else "⚠️ Nenhum arquivo enviado pelo portal ainda."}</td></tr>
+    </table>
+  </div>
+  <div style="background:#f4f8fb;padding:12px 24px;text-align:center;font-size:12px;color:#888;">
+    3D Guide Dental Solutions · www.3dguide.com.br
+  </div>
+</div>
+</body></html>
+        """.strip()
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[3D Guide] Novo Pedido — {pac} ({prof})"
+        msg["From"]    = usuario
+        msg["To"]      = destinatario
+        msg.attach(MIMEText(corpo_txt, "plain", "utf-8"))
+        msg.attach(MIMEText(corpo_html, "html", "utf-8"))
+
+        with smtplib.SMTP(smtp_server, smtp_port) as s:
+            s.ehlo()
+            s.starttls()
+            s.login(usuario, senha)
+            s.sendmail(usuario, destinatario, msg.as_string())
+
+        return True
+
+    except Exception:
+        return False  # sempre falha silenciosa — não bloqueia o fluxo
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1469,6 +1620,8 @@ def render_formulario():
                         "empresa_destino":  "",
                     }
                     inserir_pedido(payload)
+                    # Notificação por email — falha silenciosa se não configurado
+                    _enviar_email_notificacao(payload)
                     # Limpa fila de arquivos para o próximo pedido
                     st.session_state["fs_fila"] = []
                     st.session_state.estado = "sucesso"
