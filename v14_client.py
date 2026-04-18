@@ -579,6 +579,7 @@ def _init():
         "pp_n_implantes":   1,
         "pp_tecnica":       _TECNICAS[0],
         "pp_data_cirurgia": datetime.date.today() + datetime.timedelta(days=30),
+        "pp_nao_agendada":  False,
         "fs_fila":          [],    # lista de {nome, url} — upload nativo
     }
     for k, v in defaults.items():
@@ -1259,7 +1260,7 @@ def _enviar_email_notificacao(payload: dict) -> bool:
         marca = payload.get("marca_implante","—")
         modelo= payload.get("modelo_implante","—")
         kit   = payload.get("kit_cirurgico","—")
-        data  = payload.get("data_cirurgia","—")
+        data  = payload.get("data_cirurgia","") or "📅 Não agendada"
         n_imp = payload.get("num_implantes","—")
         tecnica= payload.get("tecnica","—")
         whats = payload.get("whatsapp","—")
@@ -1501,9 +1502,19 @@ def render_formulario():
                    if st.session_state.pp_tecnica in _TECNICAS else 0)
         st.session_state.pp_tecnica = c2.selectbox(
             "Técnica Preferida", _TECNICAS, index=idx_tec, key="pp_tec_in")
-        st.session_state.pp_data_cirurgia = c3.date_input(
-            "📅 Data Prevista", value=st.session_state.pp_data_cirurgia,
-            format="DD/MM/YYYY", key="pp_dci_in")
+
+        # Data da cirurgia — opcional
+        nao_ag = c3.checkbox(
+            "📅 Não agendada ainda",
+            value=st.session_state.pp_nao_agendada,
+            key="pp_nao_ag_in")
+        st.session_state.pp_nao_agendada = nao_ag
+        if nao_ag:
+            c3.caption("⚠️ Sem data definida. Informe assim que agendar.")
+        else:
+            st.session_state.pp_data_cirurgia = c3.date_input(
+                "📅 Data Prevista", value=st.session_state.pp_data_cirurgia,
+                format="DD/MM/YYYY", key="pp_dci_in")
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
         col_v, col_n = st.columns(2)
@@ -1589,7 +1600,8 @@ def render_formulario():
             rv("Técnica",      st.session_state.pp_tecnica) +
             rv("Nº Implantes", str(st.session_state.pp_n_implantes)) +
             rv("Data Cirurgia",
-               st.session_state.pp_data_cirurgia.strftime("%d/%m/%Y")) +
+               "📅 Não agendada" if st.session_state.get("pp_nao_agendada")
+               else st.session_state.pp_data_cirurgia.strftime("%d/%m/%Y")) +
             odo_html,
             unsafe_allow_html=True)
 
@@ -1628,7 +1640,8 @@ def render_formulario():
                         "protocolo_mandib": int(st.session_state.pp_prot_mand),
                         "num_implantes":    st.session_state.pp_n_implantes,
                         "tecnica":          st.session_state.pp_tecnica,
-                        "data_cirurgia":    st.session_state.pp_data_cirurgia.strftime("%Y-%m-%d"),
+                        "data_cirurgia":    "" if st.session_state.get("pp_nao_agendada")
+                                            else st.session_state.pp_data_cirurgia.strftime("%Y-%m-%d"),
                         # ── Status ────────────────────────────────────────
                         # "Caixa de Entrada" é a 1ª coluna do Painel Operacional
                         # no app.py (_KANBAN_COLS[0]). NÃO altere este valor.
