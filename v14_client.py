@@ -590,8 +590,8 @@ def _init():
 def _reset_form():
     for k in [k for k in st.session_state if k.startswith("pp_") or k == "fs_fila"]:
         del st.session_state[k]
-    if "estado" in st.session_state:
-        del st.session_state["estado"]
+    for k in ["estado", "pp_enviando"]:
+        st.session_state.pop(k, None)
     _init()
 
 
@@ -1614,9 +1614,28 @@ def render_formulario():
         if col_v.button("← Voltar", use_container_width=True):
             st.session_state.pp_passo = 4; st.rerun()
 
-        if col_env.button("🚀 Enviar Pedido para a 3D Guide",
-                          type="primary", use_container_width=True):
-            with st.spinner("Salvando pedido…"):
+        # Trava anti-duplo-envio — desabilita o botão após o primeiro clique
+        enviando = st.session_state.get("pp_enviando", False)
+
+        if enviando:
+            st.markdown("""
+            <div style="background:#fef9c3;border-left:4px solid #f59e0b;
+                        border-radius:0 8px 8px 0;padding:12px 16px;
+                        font-size:.9rem;color:#78350f;text-align:center">
+                ⏳ <strong>Aguarde...</strong> Seu pedido está sendo processado.<br>
+                <small>Por favor, clique apenas uma vez e aguarde a confirmação.</small>
+            </div>
+            """, unsafe_allow_html=True)
+            col_env.button("⏳ Enviando...", disabled=True,
+                           use_container_width=True, type="primary")
+        elif col_env.button("🚀 Enviar Pedido para a 3D Guide",
+                            type="primary", use_container_width=True):
+            st.session_state["pp_enviando"] = True
+            st.rerun()
+
+        # Processa o envio quando a trava está ativa
+        if enviando:
+            with st.spinner("Salvando pedido… Por favor aguarde."):
                 try:
                     urls_validas = get_urls_fila()   # URLs já no Supabase Storage
 
@@ -1657,12 +1676,15 @@ def render_formulario():
                     inserir_pedido(payload)
                     # Notificação por email — falha silenciosa se não configurado
                     _enviar_email_notificacao(payload)
-                    # Limpa fila de arquivos para o próximo pedido
-                    st.session_state["fs_fila"] = []
+                    # Limpa fila de arquivos e trava de envio
+                    st.session_state["fs_fila"]    = []
+                    st.session_state["pp_enviando"] = False
                     st.session_state.estado = "sucesso"
                     st.rerun()
 
                 except Exception as e:
+                    # Libera a trava em caso de erro para permitir nova tentativa
+                    st.session_state["pp_enviando"] = False
                     st.error(f"⚠️ Erro ao enviar: {e}")
                     st.caption("Tente novamente ou entre em contato via WhatsApp.")
 
