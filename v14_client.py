@@ -1220,27 +1220,32 @@ def render_landing():
         st.session_state.estado = "formulario"
         st.rerun()
 
-    # Tutorial interativo — abre em nova aba via JavaScript
+    # Tutorial interativo — botão toggle que abre o tutorial embutido na página
     tutorial_path = SCRIPT_DIR / "tutorial_3dguide.html"
     if tutorial_path.exists():
         import base64 as _b64t
         tutorial_b64 = _b64t.b64encode(tutorial_path.read_bytes()).decode()
-        # Usa iframe oculto + JS para abrir nova aba — funciona no Chrome/Edge
+
         st.markdown(
-            f'''<div style="text-align:center;margin-top:10px">
-              <a onclick="
-                var w=window.open('','_blank');
-                w.document.write(atob('{tutorial_b64}'));
-                w.document.close();
-                return false;"
-                href="#"
-                style="font-size:.85rem;color:#1a6b8a;text-decoration:none;
-                       opacity:.8;display:inline-flex;align-items:center;
-                       gap:6px;cursor:pointer">
-                📖 Ver tutorial de preenchimento
-              </a>
-            </div>''',
+            '<div style="text-align:center;margin-top:10px">',
             unsafe_allow_html=True)
+
+        if st.button("📖 Ver tutorial de preenchimento",
+                     key="btn_tutorial",
+                     use_container_width=False):
+            st.session_state["show_tutorial"] = not st.session_state.get("show_tutorial", False)
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.session_state.get("show_tutorial", False):
+            st.markdown("---")
+            components.html(
+                f'<iframe src="data:text/html;base64,{tutorial_b64}" '
+                f'style="width:100%;height:700px;border:none;border-radius:12px;" '
+                f'sandbox="allow-scripts allow-same-origin"></iframe>',
+                height=720,
+                scrolling=False,
+            )
     else:
         st.markdown(
             '<div style="text-align:center;margin-top:10px;font-size:.85rem;'
