@@ -1220,19 +1220,26 @@ def render_landing():
         st.session_state.estado = "formulario"
         st.rerun()
 
-    # Link para o tutorial interativo (abre em nova aba)
+    # Tutorial interativo — abre em nova aba via JavaScript
     tutorial_path = SCRIPT_DIR / "tutorial_3dguide.html"
     if tutorial_path.exists():
         import base64 as _b64t
         tutorial_b64 = _b64t.b64encode(tutorial_path.read_bytes()).decode()
+        # Usa iframe oculto + JS para abrir nova aba — funciona no Chrome/Edge
         st.markdown(
-            f'<div style="text-align:center;margin-top:10px">'
-            f'<a href="data:text/html;base64,{tutorial_b64}" '
-            f'target="_blank" '
-            f'style="font-size:.85rem;color:#1a6b8a;text-decoration:none;'
-            f'opacity:.8;display:inline-flex;align-items:center;gap:6px">'
-            f'📖 Ver tutorial de preenchimento</a>'
-            f'</div>',
+            f'''<div style="text-align:center;margin-top:10px">
+              <a onclick="
+                var w=window.open('','_blank');
+                w.document.write(atob('{tutorial_b64}'));
+                w.document.close();
+                return false;"
+                href="#"
+                style="font-size:.85rem;color:#1a6b8a;text-decoration:none;
+                       opacity:.8;display:inline-flex;align-items:center;
+                       gap:6px;cursor:pointer">
+                📖 Ver tutorial de preenchimento
+              </a>
+            </div>''',
             unsafe_allow_html=True)
     else:
         st.markdown(
