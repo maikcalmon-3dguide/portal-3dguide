@@ -1228,7 +1228,7 @@ def render_landing():
         st.markdown(
             f'<div style="text-align:center;margin-top:10px">'
             f'<a href="data:text/html;base64,{tutorial_b64}" '
-            f'download="tutorial_3dguide.html" '
+            f'target="_blank" '
             f'style="font-size:.85rem;color:#1a6b8a;text-decoration:none;'
             f'opacity:.8;display:inline-flex;align-items:center;gap:6px">'
             f'📖 Ver tutorial de preenchimento</a>'
