@@ -1220,7 +1220,7 @@ def render_landing():
         st.session_state.estado = "formulario"
         st.rerun()
 
-    # Tutorial interativo — botão toggle que abre o tutorial embutido na página
+    # Tutorial interativo — botão toggle com scroll automático ao abrir
     tutorial_path = SCRIPT_DIR / "tutorial_3dguide.html"
     if tutorial_path.exists():
         import base64 as _b64t
@@ -1230,21 +1230,42 @@ def render_landing():
             '<div style="text-align:center;margin-top:10px">',
             unsafe_allow_html=True)
 
-        if st.button("📖 Ver tutorial de preenchimento",
-                     key="btn_tutorial",
-                     use_container_width=False):
+        lbl_tutorial = ("❌ Fechar tutorial"
+                        if st.session_state.get("show_tutorial", False)
+                        else "📖 Ver tutorial de preenchimento")
+
+        if st.button(lbl_tutorial, key="btn_tutorial", use_container_width=False):
             st.session_state["show_tutorial"] = not st.session_state.get("show_tutorial", False)
+            st.rerun()
 
         st.markdown('</div>', unsafe_allow_html=True)
 
         if st.session_state.get("show_tutorial", False):
-            st.markdown("---")
+            # Âncora visível para scroll automático
+            st.markdown(
+                '<div id="tutorial-anchor" style="'
+                'margin-top:16px;padding:8px 16px;'
+                'background:#0e4d66;color:white;border-radius:8px 8px 0 0;'
+                'font-weight:700;font-size:.9rem;text-align:center">'
+                '📖 Tutorial de Preenchimento — Portal 3D Guide'
+                '</div>',
+                unsafe_allow_html=True)
+
             components.html(
                 f'<iframe src="data:text/html;base64,{tutorial_b64}" '
-                f'style="width:100%;height:700px;border:none;border-radius:12px;" '
+                f'style="width:100%;height:700px;border:none;border-radius:0 0 12px 12px;" '
                 f'sandbox="allow-scripts allow-same-origin"></iframe>',
                 height=720,
                 scrolling=False,
+            )
+
+            # Scroll automático até o tutorial
+            components.html(
+                '<script>'
+                'window.parent.document.getElementById("tutorial-anchor")'
+                '.scrollIntoView({behavior:"smooth",block:"start"});'
+                '</script>',
+                height=0,
             )
     else:
         st.markdown(
