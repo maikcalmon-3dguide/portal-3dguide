@@ -1651,7 +1651,7 @@ def render_formulario():
         if enviando:
             with st.spinner("Salvando pedido… Por favor aguarde."):
                 try:
-                    urls_validas = get_urls_fila()   # URLs já no Supabase Storage
+                    urls_validas = _fs_urls_acumuladas()   # URLs do Bytescale
 
                     payload = {
                         "email":            st.session_state.pp_email.strip(),
@@ -1997,7 +1997,7 @@ def render_sucesso():
         "tecnica":        st.session_state.get("pp_tecnica",""),
         "num_implantes":  st.session_state.get("pp_n_implantes",""),
         "descricao_caso": st.session_state.get("pp_descricao",""),
-        "arquivo_url":    "|".join(st.session_state.get("fs_fila",[])),
+        "arquivo_url":    _fs_urls_acumuladas(),
         "dentes_implante": ",".join(
             str(d) for d,e in sorted(
                 st.session_state.get("pp_estados",{}).items()) if e==1),
