@@ -302,9 +302,9 @@ import streamlit.components.v1 as components   # noqa: E402
 
 
 def _bytescale_uploader_html(api_key: str) -> str:
-    """Widget HTML de upload via Bytescale. Roda no iframe do Streamlit."""
+    """Widget HTML de upload via Bytescale SDK v3. Roda no iframe do Streamlit."""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<script src="https://js.bytescale.com/upload-js/v2"></script>
+<script src="https://js.bytescale.com/sdk/v3"></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif;}}
 html,body{{height:100%;background:#f0f9ff;}}
@@ -364,27 +364,25 @@ body{{padding:.6rem;display:flex;flex-direction:column;gap:.5rem;}}
 <div id="urls"></div>
 
 <script>
-const uploadjs = Upload.createUpload({{
+// Bytescale SDK v3 — UploadManager
+const uploadManager = new Bytescale.UploadManager({{
   apiKey: "{api_key}"
 }});
 
 var accumulated = '';
 
 async function uploadFiles(files) {{
-  if (!files.length) return;
+  if (!files || !files.length) return;
   setMsg('');
   setProgress('⏳ Enviando ' + files.length + ' arquivo(s)…');
 
   try {{
     const results = await Promise.all(
       Array.from(files).map(file =>
-        uploadjs.uploadFile({{
+        uploadManager.upload({{
           data: file,
-          mime: file.type || 'application/octet-stream',
-          size: file.size,
-          name: file.name,
-          path: {{
-            folderPath: "/pedidos"
+          onProgress: ({{ progress }}) => {{
+            setProgress('⏳ Enviando… ' + Math.round(progress) + '%');
           }}
         }})
       )
@@ -400,11 +398,11 @@ async function uploadFiles(files) {{
     el.innerHTML = '<b>🔗 Copie o link e cole no campo abaixo:</b>\\n' + accumulated;
   }} catch(err) {{
     setProgress('');
-    setMsg('⚠️ Erro no upload: ' + String(err));
+    setMsg('⚠️ Erro: ' + (err.message || String(err)));
   }}
 }}
 
-// Botão abre seletor nativo
+// Botão abre seletor
 document.getElementById('btn').addEventListener('click', function() {{
   document.getElementById('file-input').click();
 }});
@@ -417,12 +415,11 @@ document.getElementById('file-input').addEventListener('change', function(e) {{
 
 // Drag and drop
 var dropArea = document.getElementById('drop-area');
-dropArea.addEventListener('dragover', function(e) {{ e.preventDefault(); dropArea.classList.add('over'); }});
+dropArea.addEventListener('dragover',  function(e) {{ e.preventDefault(); dropArea.classList.add('over'); }});
 dropArea.addEventListener('dragleave', function(e) {{ e.preventDefault(); dropArea.classList.remove('over'); }});
 dropArea.addEventListener('drop', function(e) {{
   e.preventDefault(); dropArea.classList.remove('over');
-  var files = Array.from(e.dataTransfer.files);
-  if (files.length) uploadFiles(files);
+  uploadFiles(Array.from(e.dataTransfer.files));
 }});
 
 function setMsg(t) {{ document.getElementById('msg').textContent = t; }}
