@@ -1,15 +1,15 @@
 """
-3D Guide Planning — Portal Premium do Cliente (v14_client.py) V8-Filestack
+3D Guide Planning — Portal Premium do Cliente (v14_client.py) V9-Bytescale
 Landing Page → Formulário 5 passos → Supabase.
-Upload de arquivos via Filestack (widget profissional).
+Upload de arquivos via Bytescale (CDN profissional).
 
 Secrets necessários em .streamlit/secrets.toml (ou Streamlit Cloud):
     [supabase]
     url = "https://qdwlgtormzzhppoaxmao.supabase.co"
     key = "SUA_KEY_ANON"
 
-    [filestack]
-    api_key = "SUA_FILESTACK_API_KEY"
+    [bytescale]
+    api_key = "public_SUA_API_KEY_BYTESCALE"
 
 Arquivos na mesma pasta:
     logo_planning.png   — logo 3D Guide
@@ -231,7 +231,7 @@ def inject_css(estado: str):
     .odo-leg  {{ display:flex; gap:.5rem; flex-wrap:wrap; margin:.8rem 0; font-size:.75rem; }}
     .odo-leg span {{ padding:3px 10px; border-radius:20px; font-weight:700; }}
 
-    /* ── Filestack upload card ── */
+    /* ── Bytescale upload card ── */
     .fs-card {{
         border: 2px dashed {_AZUL};
         border-radius: 12px;
@@ -292,19 +292,19 @@ def ti(label, key=None, placeholder="", value="", help=None):
 
 
 # ══════════════════════════════════════════════════════════════
-# UPLOAD VIA FILESTACK CDN — arquivos grandes sem limite
+# UPLOAD VIA BYTESCALE CDN — arquivos grandes sem limite
 #
-# O Filestack faz o upload diretamente do browser para o CDN
-# deles — sem passar pelo Python/Streamlit, sem limite de 50MB.
-# O dentista usa o widget, vê a URL gerada e confirma no campo.
+# O Bytescale faz o upload diretamente do browser para o CDN
+# deles — sem passar pelo Python/Streamlit, sem limite de tamanho.
+# API compatível com o account_id + api_key do plano Basic ($7/mês).
 # ══════════════════════════════════════════════════════════════
 import streamlit.components.v1 as components   # noqa: E402
 
 
-def _fs_picker_html(api_key: str) -> str:
-    """HTML auto-contido do picker Filestack. Roda dentro do iframe do Streamlit."""
+def _bytescale_uploader_html(api_key: str) -> str:
+    """Widget HTML de upload via Bytescale. Roda no iframe do Streamlit."""
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<script src="https://static.filestackapi.com/filestack-js/3.x.x/filestack.min.js"></script>
+<script src="https://js.bytescale.com/upload-js/v2"></script>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,sans-serif;}}
 html,body{{height:100%;background:#f0f9ff;}}
@@ -318,7 +318,6 @@ body{{padding:.6rem;display:flex;flex-direction:column;gap:.5rem;}}
 }}
 #btn:hover{{opacity:.88;}}
 
-/* Área de drag-and-drop usando input nativo */
 #drop-area{{
   border:2px dashed #1a6b8a;border-radius:10px;
   background:#fff;padding:1.2rem;text-align:center;
@@ -330,7 +329,6 @@ body{{padding:.6rem;display:flex;flex-direction:column;gap:.5rem;}}
   display:block;cursor:pointer;color:#374151;font-size:.85rem;
   pointer-events:none;
 }}
-/* Input invisível que cobre toda a área de drop */
 #file-input{{
   position:absolute;inset:0;width:100%;height:100%;
   opacity:0;cursor:pointer;
@@ -366,96 +364,82 @@ body{{padding:.6rem;display:flex;flex-direction:column;gap:.5rem;}}
 <div id="urls"></div>
 
 <script>
-var cl = filestack.init('{api_key}');
+const uploadjs = Upload.createUpload({{
+  apiKey: "{api_key}"
+}});
+
 var accumulated = '';
 
-/* ── Botão: abre o picker Filestack ─────────────────────── */
-document.getElementById('btn').addEventListener('click', function(){{
-  cl.picker({{
-    fromSources:['local_file_system','googledrive','dropbox'],
-    maxFiles: 20,
-    uploadInBackground: false,
-    onUploadDone: function(r){{ handleDone(r.filesUploaded||[]); }},
-    onFileUploadFailed: function(f,e){{
-      setMsg('⚠️ Erro: '+(e.message||String(e)));
-    }}
-  }}).open();
-}});
-
-/* ── Input nativo: seleção por clique na área de drop ────── */
-document.getElementById('file-input').addEventListener('change', function(e){{
-  uploadFiles(Array.from(e.target.files));
-  e.target.value = '';   // reset para permitir selecionar os mesmos arquivos
-}});
-
-/* ── Drag-and-drop nativo sobre a área pontilhada ────────── */
-var dropArea = document.getElementById('drop-area');
-
-dropArea.addEventListener('dragover', function(e){{
-  e.preventDefault(); e.stopPropagation();
-  dropArea.classList.add('over');
-}});
-dropArea.addEventListener('dragleave', function(e){{
-  e.preventDefault(); e.stopPropagation();
-  dropArea.classList.remove('over');
-}});
-dropArea.addEventListener('drop', function(e){{
-  e.preventDefault(); e.stopPropagation();
-  dropArea.classList.remove('over');
-  var files = Array.from(e.dataTransfer.files);
-  if(files.length) uploadFiles(files);
-}});
-
-/* ── Upload via API do Filestack (sem picker) ────────────── */
-function uploadFiles(files){{
-  if(!files.length) return;
+async function uploadFiles(files) {{
+  if (!files.length) return;
   setMsg('');
-  setProgress('⏳ Enviando '+files.length+' arquivo(s)…');
+  setProgress('⏳ Enviando ' + files.length + ' arquivo(s)…');
 
-  Promise.all(files.map(function(f){{
-    return cl.upload(f, {{}}, {{filename: f.name}});
-  }}))
-  .then(function(results){{
+  try {{
+    const results = await Promise.all(
+      Array.from(files).map(file =>
+        uploadjs.uploadFile({{
+          data: file,
+          mime: file.type || 'application/octet-stream',
+          size: file.size,
+          name: file.name,
+          path: {{
+            folderPath: "/pedidos"
+          }}
+        }})
+      )
+    );
     setProgress('');
-    handleDone(results);
-  }})
-  .catch(function(err){{
+    const urls = results.map(r => r.fileUrl).filter(u => u && u.startsWith('http'));
+    if (!urls.length) {{ setMsg('⚠️ Nenhuma URL retornada.'); return; }}
+    accumulated = accumulated ? accumulated + '|' + urls.join('|') : urls.join('|');
+    const count = accumulated.split('|').filter(Boolean).length;
+    setMsg('✅ ' + files.length + ' arquivo(s) enviado(s). Total: ' + count);
+    var el = document.getElementById('urls');
+    el.style.display = 'block';
+    el.innerHTML = '<b>🔗 Copie o link e cole no campo abaixo:</b>\\n' + accumulated;
+  }} catch(err) {{
     setProgress('');
-    setMsg('⚠️ Erro no upload: '+String(err));
-  }});
+    setMsg('⚠️ Erro no upload: ' + String(err));
+  }}
 }}
 
-/* ── Callback unificado para picker e drop ───────────────── */
-function handleDone(files){{
-  if(!files||!files.length){{ setMsg('⚠️ Nenhum arquivo retornado.'); return; }}
-  var newUrls = files.map(function(f){{return f.url||''}})
-                     .filter(function(u){{return u.indexOf('http')===0;}});
-  if(!newUrls.length){{ setMsg('⚠️ URLs não encontradas.'); return; }}
+// Botão abre seletor nativo
+document.getElementById('btn').addEventListener('click', function() {{
+  document.getElementById('file-input').click();
+}});
 
-  accumulated = accumulated ? accumulated+'|'+newUrls.join('|') : newUrls.join('|');
-  var count = accumulated.split('|').filter(Boolean).length;
+// Input nativo
+document.getElementById('file-input').addEventListener('change', function(e) {{
+  uploadFiles(Array.from(e.target.files));
+  e.target.value = '';
+}});
 
-  setMsg('✅ '+files.length+' arquivo(s) enviado(s). Total na fila: '+count);
-  var el = document.getElementById('urls');
-  el.style.display = 'block';
-  el.innerHTML = '<b>🔗 Copie o link e cole no campo "Passo 2" abaixo:</b>\\n' + accumulated;
-}}
+// Drag and drop
+var dropArea = document.getElementById('drop-area');
+dropArea.addEventListener('dragover', function(e) {{ e.preventDefault(); dropArea.classList.add('over'); }});
+dropArea.addEventListener('dragleave', function(e) {{ e.preventDefault(); dropArea.classList.remove('over'); }});
+dropArea.addEventListener('drop', function(e) {{
+  e.preventDefault(); dropArea.classList.remove('over');
+  var files = Array.from(e.dataTransfer.files);
+  if (files.length) uploadFiles(files);
+}});
 
-function setMsg(t){{ document.getElementById('msg').textContent=t; }}
-function setProgress(t){{
-  var el=document.getElementById('progress');
-  el.textContent=t; el.style.display=t?'block':'none';
+function setMsg(t) {{ document.getElementById('msg').textContent = t; }}
+function setProgress(t) {{
+  var el = document.getElementById('progress');
+  el.textContent = t; el.style.display = t ? 'block' : 'none';
 }}
 </script></body></html>"""
 
 
 def render_uploader() -> None:
     """
-    Upload de arquivos grandes via Filestack CDN (sem limite de tamanho).
+    Upload de arquivos via Bytescale CDN (sem limite de tamanho).
 
     Fluxo:
-    1. Dentista clica no botão → janela do Filestack abre
-    2. Filestack faz upload direto para o CDN deles (browser → CDN)
+    1. Dentista clica no botão ou arrasta arquivos
+    2. Bytescale faz upload direto do browser para o CDN deles
     3. URL aparece no widget em verde
     4. Dentista copia e cola no campo de texto abaixo
     5. Sistema registra e acumula as URLs
@@ -463,95 +447,75 @@ def render_uploader() -> None:
     if "fs_fila" not in st.session_state:
         st.session_state["fs_fila"] = []   # [{nome, url}]
 
-    # Tenta ler a api_key do Filestack
+    # Lê api_key do Bytescale
     try:
-        api_key = st.secrets["filestack"]["api_key"]
-        tem_filestack = bool(api_key)
+        api_key = st.secrets["bytescale"]["api_key"]
+        tem_bytescale = bool(api_key)
     except Exception:
         api_key = ""
-        tem_filestack = False
+        tem_bytescale = False
 
     st.warning(
         "⚠️ **DICOM:** envie a pasta compactada em **.ZIP** ou **.7z**. "
         "STL, fotos e PDFs podem ser individuais."
     )
 
-    if tem_filestack:
+    if tem_bytescale:
         st.markdown(
             "**Passo 1:** Clique no botão abaixo para selecionar os arquivos "
             "(qualquer tamanho, inclusive tomografias de 1GB+)."
         )
-        components.html(_fs_picker_html(api_key), height=520, scrolling=True)
+        components.html(_bytescale_uploader_html(api_key), height=520, scrolling=True)
 
         st.markdown(
             "**Passo 2:** Após o upload terminar, o link aparece em verde no widget acima. "
             "**Copie-o e cole no campo abaixo** para confirmar:"
         )
     else:
-        st.error("⚠️ Filestack não configurado. Adicione `[filestack] api_key` nos Secrets.")
-        st.info("Sem o Filestack, apenas arquivos pequenos (< 50 MB) podem ser enviados "
-                "pelo campo abaixo.")
+        st.error("⚠️ Bytescale não configurado. Adicione `[bytescale] api_key` nos Secrets.")
+        st.info("Sem o Bytescale, apenas arquivos pequenos (< 50 MB) podem ser enviados.")
 
-    # Campo de texto — único ponto de entrada confiável JS→Python
-    # O dentista cola a URL gerada pelo widget (ou digita manualmente)
+    # Campo de texto — ponto de entrada JS → Python
     url_colada = st.text_input(
         "🔗 Cole aqui a URL do arquivo após o upload",
-        placeholder="https://cdn.filestackcontent.com/...",
+        placeholder="https://upcdn.io/...",
         key="fs_url_input",
-        help="Após o upload terminar no widget acima, copie o link verde "
-             "e cole aqui. Para múltiplos uploads, cole cada link separado por |",
-    ).strip()
+    )
 
-    col_add, col_clear = st.columns([3, 1])
-
-    if col_add.button("➕ Adicionar à fila", key="fs_add",
-                      use_container_width=True,
-                      help="Adiciona o link colado à lista de arquivos do pedido"):
-        if url_colada:
-            # Processa múltiplos links separados por |
-            novos = [u.strip() for u in url_colada.split("|")
-                     if u.strip().startswith("http")]
+    if url_colada.strip():
+        novas = [u.strip() for u in url_colada.strip().split("|") if u.strip().startswith("http")]
+        if novas:
             ja_na_fila = {item["url"] for item in st.session_state["fs_fila"]}
             adicionados = 0
-            for u in novos:
+            for u in novas:
                 if u not in ja_na_fila:
-                    nome = u.rstrip("/").split("/")[-1].split("?")[0] or "arquivo"
+                    nome = u.split("/")[-1] or "arquivo"
                     st.session_state["fs_fila"].append({"nome": nome, "url": u})
                     adicionados += 1
             if adicionados:
-                st.success(f"✅ {adicionados} link(s) adicionado(s) à fila.")
+                st.success(f"✅ {adicionados} arquivo(s) adicionado(s) à fila.")
                 st.rerun()
-            else:
-                st.warning("Link já está na fila ou não é uma URL válida.")
-        else:
-            st.warning("Cole a URL do arquivo antes de adicionar.")
 
-    if col_clear.button("🗑️ Limpar", key="fs_clear_all",
-                        use_container_width=True):
+    if st.button("🗑️ Limpar fila de arquivos", key="fs_limpar"):
         st.session_state["fs_fila"] = []
         st.rerun()
 
-    # Lista de arquivos na fila
     fila = st.session_state["fs_fila"]
     if fila:
-        st.success(f"**📋 {len(fila)} arquivo(s) na fila para envio:**")
+        st.markdown(f"**📎 {len(fila)} arquivo(s) na fila:**")
         for i, item in enumerate(fila):
-            c1, c2 = st.columns([7, 1])
-            c1.markdown(f"&nbsp;&nbsp;✅ **{i+1}.** `{item['nome']}`")
-            if c2.button("✕", key=f"rm_{i}", help=f"Remover {item['nome']}"):
+            c1, c2 = st.columns([9, 1])
+            c1.markdown(f"[{item['nome']}]({item['url']})")
+            if c2.button("✕", key=f"fs_del_{i}"):
                 st.session_state["fs_fila"].pop(i)
                 st.rerun()
-    else:
-        st.info("ℹ️ Nenhum arquivo na fila. Use o widget acima para fazer o upload.")
 
 
-def get_urls_fila() -> str:
-    """Retorna todas as URLs da fila unidas por | para gravar no Supabase."""
+def _fs_urls_acumuladas() -> str:
     return "|".join(
         item["url"] for item in st.session_state.get("fs_fila", [])
         if item.get("url", "").startswith("http")
     )
-
 
 # ══════════════════════════════════════════════════════════════
 # SESSION STATE
@@ -1577,7 +1541,7 @@ def render_formulario():
                         use_container_width=True):
             st.session_state.pp_passo = 5; st.rerun()
 
-    # ── Passo 5: Arquivos (Filestack) + Revisão + Envio ───────
+    # ── Passo 5: Arquivos (Bytescale) + Revisão + Envio ───────
     elif passo == 5:
         marca_final  = _resolve(st.session_state.pp_marca,  st.session_state.pp_marca_outro)
         modelo_final = _resolve(st.session_state.pp_modelo, st.session_state.pp_modelo_outro)
@@ -1608,7 +1572,7 @@ def render_formulario():
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Upload Filestack ──────────────────────────────────
+        # ── Upload Bytescale ──────────────────────────────────
         st.markdown('<div class="passo-card">', unsafe_allow_html=True)
         st.markdown('<div class="passo-titulo">📎 Arquivos do Caso (opcional)</div>',
                     unsafe_allow_html=True)
@@ -1718,7 +1682,7 @@ def render_formulario():
                         # "Caixa de Entrada" é a 1ª coluna do Painel Operacional
                         # no app.py (_KANBAN_COLS[0]). NÃO altere este valor.
                         "status":           "Caixa de Entrada",
-                        # ── URLs do Filestack ──────────────────────────────
+                        # ── URLs do Bytescale ──────────────────────────────
                         # urls_validas: links filtrados e unidos por |
                         # Gravadas em DUAS colunas para compatibilidade total
                         "arquivo_url":      urls_validas,
