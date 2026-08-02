@@ -1,0 +1,7 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = '''mkdir -p .streamlit && printf '[supabase]\nurl = "%s"\nkey = "%s"\n\n[filestack]\napi_key = "%s"\n' "$SUPABASE_URL" "$SUPABASE_KEY" "$FILESTACK_API_KEY" > .streamlit/secrets.toml && streamlit run v14_client.py --server.port $PORT --server.address 0.0.0.0 --server.headless true'''
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
