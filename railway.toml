@@ -2,6 +2,6 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = '''mkdir -p .streamlit && printf '[supabase]\nurl = "%s"\nkey = "%s"\n\n[filestack]\napi_key = "%s"\n' "$SUPABASE_URL" "$SUPABASE_KEY" "$FILESTACK_API_KEY" > .streamlit/secrets.toml && streamlit run v14_client.py --server.port $PORT --server.address 0.0.0.0 --server.headless true'''
+startCommand = '''mkdir -p .streamlit && printf '[supabase]\nurl = "%s"\nkey = "%s"\n\n[bytescale]\napi_key = "%s"\n\n[email]\nsmtp_server = "smtp.gmail.com"\nsmtp_port = 587\nusuario = "%s"\nsenha = "%s"\n' "$SUPABASE_URL" "$SUPABASE_KEY" "$BYTESCALE_API_KEY" "$EMAIL_USUARIO" "$EMAIL_SENHA" > .streamlit/secrets.toml && streamlit run v14_client.py --server.port $PORT --server.address 0.0.0.0 --server.headless true'''
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
