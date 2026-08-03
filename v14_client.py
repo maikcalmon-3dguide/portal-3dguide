@@ -1254,19 +1254,17 @@ def _enviar_email_notificacao(payload: dict) -> bool:
     Retorna True se enviado, False se falhou silenciosamente.
     """
     try:
-        import smtplib
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
+        import os, json, urllib.request
 
-        cfg = st.secrets.get("email", {})
-        smtp_server = cfg.get("smtp_server", "smtp.gmail.com")
-        smtp_port   = int(cfg.get("smtp_port", 587))
-        usuario     = cfg.get("usuario", "")
-        senha       = cfg.get("senha", "")
+        api_key = os.environ.get("RESEND_API_KEY", "")
+        if not api_key:
+            print("[email] RESEND_API_KEY não configurada — envio pulado")
+            return False  # chave não configurada — falha silenciosa
 
-        if not (usuario and senha):
-            return False  # credenciais não configuradas — falha silenciosa
-
+        # Remetente: por padrão o domínio de testes do Resend (funciona sem DNS).
+        # Depois de verificar o domínio no Resend, defina a variável
+        # EMAIL_REMETENTE = "3D Guide <pedidos@3dguide.com.br>" no Railway.
+        remetente    = os.environ.get("EMAIL_REMETENTE", "3D Guide <onboarding@resend.dev>")
         destinatario = "maikcalmon@hotmail.com"
         prof  = payload.get("profissional","—")
         pac   = payload.get("paciente","—")
@@ -1356,23 +1354,33 @@ Pedido recebido via Portal 3D Guide — www.3dguide.com.br
 </body></html>
         """.strip()
 
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"[3D Guide] Novo Pedido — {pac} ({prof})"
-        msg["From"]    = usuario
-        msg["To"]      = destinatario
-        msg.attach(MIMEText(corpo_txt, "plain", "utf-8"))
-        msg.attach(MIMEText(corpo_html, "html", "utf-8"))
+        assunto = f"[3D Guide] Novo Pedido — {pac} ({prof})"
+        dados = json.dumps({
+            "from":    remetente,
+            "to":      [destinatario],
+            "subject": assunto,
+            "html":    corpo_html,
+            "text":    corpo_txt,
+        }).encode("utf-8")
 
-        with smtplib.SMTP(smtp_server, smtp_port) as s:
-            s.ehlo()
-            s.starttls()
-            s.login(usuario, senha)
-            s.sendmail(usuario, destinatario, msg.as_string())
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=dados,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type":  "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            resp.read()  # 200/202 = enviado
 
         return True
 
-    except Exception:
-        return False  # sempre falha silenciosa — não bloqueia o fluxo
+    except Exception as e:
+        # Não bloqueia o fluxo do pedido; registra o motivo nos logs do Railway.
+        print(f"[email] falha ao enviar via Resend: {e}")
+        return False
 
 
 # ══════════════════════════════════════════════════════════════
