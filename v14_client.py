@@ -1254,17 +1254,16 @@ def _enviar_email_notificacao(payload: dict) -> bool:
     Retorna True se enviado, False se falhou silenciosamente.
     """
     try:
-        import os, json, urllib.request
+        import os, json, urllib.request, urllib.error
 
-        api_key = os.environ.get("RESEND_API_KEY", "")
+        api_key = os.environ.get("BREVO_API_KEY", "")
         if not api_key:
-            print("[email] RESEND_API_KEY não configurada — envio pulado")
+            print("[email] BREVO_API_KEY não configurada — envio pulado")
             return False  # chave não configurada — falha silenciosa
 
-        # Remetente: por padrão o domínio de testes do Resend (funciona sem DNS).
-        # Depois de verificar o domínio no Resend, defina a variável
-        # EMAIL_REMETENTE = "3D Guide <pedidos@3dguide.com.br>" no Railway.
-        remetente    = os.environ.get("EMAIL_REMETENTE", "3D Guide <onboarding@resend.dev>")
+        # Remetente verificado no Brevo (Settings > Senders). Padrão já pronto;
+        # dá pra trocar sem mexer no código pela variável BREVO_REMETENTE.
+        remetente_email = os.environ.get("BREVO_REMETENTE", "maikcalmon@gmail.com")
         destinatario = "maikcalmon@hotmail.com"
         prof  = payload.get("profissional","—")
         pac   = payload.get("paciente","—")
@@ -1356,30 +1355,38 @@ Pedido recebido via Portal 3D Guide — www.3dguide.com.br
 
         assunto = f"[3D Guide] Novo Pedido — {pac} ({prof})"
         dados = json.dumps({
-            "from":    remetente,
-            "to":      [destinatario],
-            "subject": assunto,
-            "html":    corpo_html,
-            "text":    corpo_txt,
+            "sender":      {"name": "3D Guide", "email": remetente_email},
+            "to":          [{"email": destinatario}],
+            "subject":     assunto,
+            "htmlContent": corpo_html,
+            "textContent": corpo_txt,
         }).encode("utf-8")
 
         req = urllib.request.Request(
-            "https://api.resend.com/emails",
+            "https://api.brevo.com/v3/smtp/email",
             data=dados,
             headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type":  "application/json",
+                "api-key":      api_key,
+                "Content-Type": "application/json",
+                "accept":       "application/json",
             },
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=15) as resp:
-            resp.read()  # 200/202 = enviado
+            resp.read()  # 201 = enviado
 
         return True
 
+    except urllib.error.HTTPError as e:
+        # Registra o motivo exato nos logs do Railway (não bloqueia o pedido).
+        try:
+            detalhe = e.read().decode("utf-8", "ignore")
+        except Exception:
+            detalhe = ""
+        print(f"[email] falha ao enviar via Brevo: HTTP {e.code} — {detalhe}")
+        return False
     except Exception as e:
-        # Não bloqueia o fluxo do pedido; registra o motivo nos logs do Railway.
-        print(f"[email] falha ao enviar via Resend: {e}")
+        print(f"[email] falha ao enviar via Brevo: {e}")
         return False
 
 
