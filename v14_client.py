@@ -1276,18 +1276,17 @@ def _enviar_email_notificacao(payload: dict) -> bool:
     Retorna True se enviado, False se falhou silenciosamente.
     """
     try:
-        import smtplib
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
+        import os as _os
+        import json as _json
+        import urllib.request as _urlreq
+        import urllib.error as _urlerr
 
-        cfg = st.secrets.get("email", {})
-        smtp_server = cfg.get("smtp_server", "smtp.gmail.com")
-        smtp_port   = int(cfg.get("smtp_port", 587))
-        usuario     = cfg.get("usuario", "")
-        senha       = cfg.get("senha", "")
-
-        if not (usuario and senha):
-            return False  # credenciais não configuradas — falha silenciosa
+        # Envio via API do Brevo por HTTPS (o Railway bloqueia SMTP no
+        # plano Hobby, por isso NÃO usamos smtplib/Gmail aqui).
+        brevo_key = _os.environ.get("BREVO_API_KEY", "").strip()
+        remetente = _os.environ.get("BREVO_REMETENTE", "maikcalmon@gmail.com").strip()
+        if not brevo_key:
+            return False  # chave não configurada — falha silenciosa
 
         destinatario = "maikcalmon@hotmail.com"
         prof  = payload.get("profissional","—")
@@ -1378,23 +1377,38 @@ Pedido recebido via Portal 3D Guide — www.3dguide.com.br
 </body></html>
         """.strip()
 
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"[3D Guide] Novo Pedido — {pac} ({prof})"
-        msg["From"]    = usuario
-        msg["To"]      = destinatario
-        msg.attach(MIMEText(corpo_txt, "plain", "utf-8"))
-        msg.attach(MIMEText(corpo_html, "html", "utf-8"))
+        corpo_requisicao = {
+            "sender":      {"email": remetente, "name": "3D Guide Portal"},
+            "to":          [{"email": destinatario}],
+            "subject":     f"[3D Guide] Novo Pedido — {pac} ({prof})",
+            "htmlContent": corpo_html,
+            "textContent": corpo_txt,
+        }
+        req = _urlreq.Request(
+            "https://api.brevo.com/v3/smtp/email",
+            data=_json.dumps(corpo_requisicao).encode("utf-8"),
+            headers={
+                "accept":       "application/json",
+                "api-key":      brevo_key,
+                "content-type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with _urlreq.urlopen(req, timeout=15) as resp:
+                resp.read()
+            return True
+        except _urlerr.HTTPError as e:
+            try:
+                print(f"[email] falha ao enviar via Brevo: "
+                      f"HTTP {e.code} — {e.read().decode('utf-8', 'ignore')}")
+            except Exception:
+                print(f"[email] falha ao enviar via Brevo: HTTP {e.code}")
+            return False
 
-        with smtplib.SMTP(smtp_server, smtp_port) as s:
-            s.ehlo()
-            s.starttls()
-            s.login(usuario, senha)
-            s.sendmail(usuario, destinatario, msg.as_string())
-
-        return True
-
-    except Exception:
-        return False  # sempre falha silenciosa — não bloqueia o fluxo
+    except Exception as e:
+        print(f"[email] erro inesperado ao enviar: {e}")
+        return False  # não bloqueia o fluxo do pedido
 
 
 # ══════════════════════════════════════════════════════════════
