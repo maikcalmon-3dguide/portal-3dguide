@@ -19,6 +19,28 @@ Arquivos na mesma pasta:
 import streamlit as st
 import streamlit.components.v1 as components   # obrigatório conforme requisito
 import datetime
+
+# ── Fuso horário: horário de Brasília (UTC-3) no portal ────────────────
+# O servidor (Railway) roda em UTC e pode NÃO ter a base de fusos do
+# sistema. Usamos um deslocamento FIXO de -3h (Brasília não tem horário
+# de verão desde 2019), que funciona em qualquer servidor. Use _agora()
+# e _hoje() no lugar de _agora() / _hoje().
+import os
+import time
+os.environ["TZ"] = "America/Sao_Paulo"
+try:
+    time.tzset()
+except Exception:
+    pass
+
+_BR_TZ = datetime.timezone(datetime.timedelta(hours=-3))
+def _agora():
+    """Data e hora atuais no horário de Brasília (objeto 'naive')."""
+    return datetime.datetime.now(_BR_TZ).replace(tzinfo=None)
+def _hoje():
+    """Data atual no horário de Brasília."""
+    return datetime.datetime.now(_BR_TZ).date()
+
 import re
 from pathlib import Path
 from supabase import create_client, Client
@@ -539,7 +561,7 @@ def _init():
         "pp_prot_mand":     False,
         "pp_n_implantes":   1,
         "pp_tecnica":       _TECNICAS[0],
-        "pp_data_cirurgia": datetime.date.today() + datetime.timedelta(days=30),
+        "pp_data_cirurgia": _hoje() + datetime.timedelta(days=30),
         "pp_nao_agendada":  False,
         "fs_fila":          [],    # lista de {nome, url} — upload nativo
     }
@@ -1254,16 +1276,19 @@ def _enviar_email_notificacao(payload: dict) -> bool:
     Retorna True se enviado, False se falhou silenciosamente.
     """
     try:
-        import os, json, urllib.request, urllib.error
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
 
-        api_key = os.environ.get("BREVO_API_KEY", "")
-        if not api_key:
-            print("[email] BREVO_API_KEY não configurada — envio pulado")
-            return False  # chave não configurada — falha silenciosa
+        cfg = st.secrets.get("email", {})
+        smtp_server = cfg.get("smtp_server", "smtp.gmail.com")
+        smtp_port   = int(cfg.get("smtp_port", 587))
+        usuario     = cfg.get("usuario", "")
+        senha       = cfg.get("senha", "")
 
-        # Remetente verificado no Brevo (Settings > Senders). Padrão já pronto;
-        # dá pra trocar sem mexer no código pela variável BREVO_REMETENTE.
-        remetente_email = os.environ.get("BREVO_REMETENTE", "maikcalmon@gmail.com")
+        if not (usuario and senha):
+            return False  # credenciais não configuradas — falha silenciosa
+
         destinatario = "maikcalmon@hotmail.com"
         prof  = payload.get("profissional","—")
         pac   = payload.get("paciente","—")
@@ -1282,7 +1307,7 @@ def _enviar_email_notificacao(payload: dict) -> bool:
         imed_s= payload.get("dentes_imediato","")
         pont_s= payload.get("dentes_pontico","")
         urls  = payload.get("arquivo_url","")
-        data_envio = datetime.datetime.now().strftime("%d/%m/%Y às %H:%M")
+        data_envio = _agora().strftime("%d/%m/%Y às %H:%M")
 
         odo_texto = ""
         if imp_s:  odo_texto += f"  • Implante: {imp_s}\n"
@@ -1353,41 +1378,23 @@ Pedido recebido via Portal 3D Guide — www.3dguide.com.br
 </body></html>
         """.strip()
 
-        assunto = f"[3D Guide] Novo Pedido — {pac} ({prof})"
-        dados = json.dumps({
-            "sender":      {"name": "3D Guide", "email": remetente_email},
-            "to":          [{"email": destinatario}],
-            "subject":     assunto,
-            "htmlContent": corpo_html,
-            "textContent": corpo_txt,
-        }).encode("utf-8")
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"[3D Guide] Novo Pedido — {pac} ({prof})"
+        msg["From"]    = usuario
+        msg["To"]      = destinatario
+        msg.attach(MIMEText(corpo_txt, "plain", "utf-8"))
+        msg.attach(MIMEText(corpo_html, "html", "utf-8"))
 
-        req = urllib.request.Request(
-            "https://api.brevo.com/v3/smtp/email",
-            data=dados,
-            headers={
-                "api-key":      api_key,
-                "Content-Type": "application/json",
-                "accept":       "application/json",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            resp.read()  # 201 = enviado
+        with smtplib.SMTP(smtp_server, smtp_port) as s:
+            s.ehlo()
+            s.starttls()
+            s.login(usuario, senha)
+            s.sendmail(usuario, destinatario, msg.as_string())
 
         return True
 
-    except urllib.error.HTTPError as e:
-        # Registra o motivo exato nos logs do Railway (não bloqueia o pedido).
-        try:
-            detalhe = e.read().decode("utf-8", "ignore")
-        except Exception:
-            detalhe = ""
-        print(f"[email] falha ao enviar via Brevo: HTTP {e.code} — {detalhe}")
-        return False
-    except Exception as e:
-        print(f"[email] falha ao enviar via Brevo: {e}")
-        return False
+    except Exception:
+        return False  # sempre falha silenciosa — não bloqueia o fluxo
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1779,7 +1786,7 @@ def _gerar_pdf_solicitacao(payload: dict, estados: dict) -> bytes:
     else:
         logo_el = Paragraph("3D Guide", s_h)
 
-    data_emissao = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+    data_emissao = _agora().strftime("%d/%m/%Y %H:%M")
     ht = Table(
         [[logo_el,
           Paragraph("SOLICITAÇÃO DE PLANEJAMENTO CIRÚRGICO", s_h),
@@ -2004,7 +2011,7 @@ def render_sucesso():
         "whatsapp":       st.session_state.get("pp_whats",""),
         "paciente":       st.session_state.get("pp_pac",""),
         "data_cirurgia":  st.session_state.get("pp_data_cirurgia",
-                           datetime.date.today()).strftime("%d/%m/%Y"),
+                           _hoje()).strftime("%d/%m/%Y"),
         "marca_implante": st.session_state.get("pp_marca",""),
         "modelo_implante":st.session_state.get("pp_modelo",""),
         "kit_cirurgico":  st.session_state.get("pp_kit",""),
@@ -2035,7 +2042,7 @@ def render_sucesso():
     if pdf_bytes:
         nome_pac = re.sub(r'[\\/:*?"<>|]', "_",
                           payload_atual["paciente"].upper().strip() or "CASO")
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        ts = _agora().strftime("%Y%m%d_%H%M%S")
         nome_pdf = f"Solicitacao_Planejamento_{nome_pac}_{ts}.pdf"
 
         st.markdown(
